@@ -14,10 +14,20 @@ Follow the steps in order. Each one produces a value the next one needs.
 
 1. [Push to GitHub](#1-push-the-repository-to-github)
 2. [Create the MongoDB Atlas database](#2-mongodb-atlas)
-3. [Deploy the backend on Render](#3-backend-on-render)
+3. [Deploy the backend on Render](#3-backend-on-render), then [allow Render in Atlas](#3b-allow-render-in-atlas-network-access)
 4. [Deploy the frontend on Vercel](#4-frontend-on-vercel)
 5. [Connect them with CORS](#5-connect-frontend-and-backend)
 6. [Verify the live system](#6-verify-the-live-system)
+
+Keep a note of these values as you go (never commit them):
+
+| Value                     | Produced in | Used in                         | Secret? |
+| ------------------------- | ----------- | ------------------------------- | ------- |
+| GitHub repository URL     | 1           | Render, Vercel                  | no      |
+| `MONGODB_URI`             | 2           | Render                          | **yes** |
+| Render service URL        | 3           | Vercel (`VITE_API_BASE_URL`), 6 | no      |
+| Render outbound IP ranges | 3           | Atlas (3b)                      | no      |
+| Vercel production URL     | 4           | Render (`CORS_ORIGINS`), 6      | no      |
 
 ---
 
@@ -37,14 +47,25 @@ git ls-files | grep -i "\.env"      # must list only .env.example
 - Name: e.g. `metaflow-ai`. Visibility: **Private** is recommended.
 - Do **not** add a README, .gitignore or license (the repository already has them).
 
-**Connect and push** (replace `<your-username>` with your GitHub account or organization):
+**Connect, check, then push** (replace `<your-username>` with your GitHub account or organization):
 
 ```bash
 git remote add origin https://github.com/<your-username>/metaflow-ai.git
-git push -u origin main
+git ls-remote origin        # must print NOTHING: proves the GitHub repository is empty
+git push -u origin main     # never add --force
 ```
 
-**Authentication.** Git for Windows includes Git Credential Manager: the first push opens a browser window to sign in to GitHub, and the credential is stored securely afterwards. Alternatively, install the GitHub CLI (`winget install GitHub.cli`), run `gh auth login`, then push. Never paste a personal access token into the remote URL.
+If `git ls-remote origin` prints anything, **stop**: the GitHub repository already has history, and pushing over it would overwrite someone's work. Use a new, empty repository, or merge deliberately (below).
+
+**Authentication.** Git for Windows includes Git Credential Manager: the first push opens a browser window to sign in to GitHub, and the credential is stored securely afterwards. If a GitHub credential is already stored, check that it belongs to the account that owns the repository. Alternatively, install the GitHub CLI (`winget install GitHub.cli`), run `gh auth login`, then push. Never paste a personal access token into the remote URL.
+
+**If the push is rejected:**
+
+| Message                                                  | Cause and safe fix                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rejected … (fetch first)` / `non-fast-forward`          | The GitHub repository is not empty (often a README added at creation). Do **not** force-push. If it is a brand-new repository, delete and recreate it empty. Otherwise: `git pull --no-rebase --allow-unrelated-histories origin main`, resolve any conflicts, commit, `git push -u origin main`.                                                                                                                                                       |
+| `GH007: Your push would publish a private email address` | Your GitHub email privacy setting blocks the commit author email. Either allow it (GitHub → Settings → Emails → untick "Block command line pushes that expose my email"), or set your `…@users.noreply.github.com` address with `git config user.email` and re-author the unpushed commits: `git rebase --root --exec "git commit --amend --no-edit --reset-author"`. That rewrites local commits only, which is safe because nothing is on GitHub yet. |
+| `Repository not found` / `403`                           | The stored credential belongs to a different GitHub account, or the URL is wrong. Check the URL, then sign in again through Git Credential Manager.                                                                                                                                                                                                                                                                                                     |
 
 ---
 
@@ -54,9 +75,7 @@ git push -u origin main
 2. **Create a database user** (Security → Database Access):
    - Username: `metaflow-api`. Use **Autogenerate Secure Password** and store it in a password manager.
    - Privileges: _Specific privileges_ → `readWrite` on database `metaflow` only. Do not use `atlasAdmin`.
-3. **Restrict network access** (Security → Network Access):
-   - Recommended: add Render's outbound IP ranges. In Render, open the backend service → **Connect** (top right) → **Outbound** tab, and add each CIDR range to Atlas. Ranges are shared by all Render services in that region.
-   - Only if you cannot do that yet: `0.0.0.0/0` (anywhere) works, but then the password is the only protection. Replace it with the Render ranges as soon as the service exists.
+3. **Network access: leave it for now.** Render's addresses are allowed in [step 3b](#3b-allow-render-in-atlas-network-access), once the Render service exists. Do **not** add `0.0.0.0/0`. If Atlas's setup wizard offers to add your current IP address, that only lets your own computer in; accept or skip it as you prefer.
 4. **Get the connection string**: Database → Connect → Drivers. Copy the `mongodb+srv://` string, insert the password (URL-encode characters such as `@ : / ? # %`), and put the database name before the query string:
 
    ```
@@ -116,9 +135,23 @@ Do not set `PORT`; Render provides it. Node 24 is selected by the repository's `
 When the deploy is live, note the service URL (e.g. `https://metaflow-api.onrender.com`) and check it:
 
 ```bash
-curl https://metaflow-api.onrender.com/api/health
-curl -i https://metaflow-api.onrender.com/api/health/ready
+curl https://metaflow-api.onrender.com/api/health          # expect 200, "environment":"production"
+curl -i https://metaflow-api.onrender.com/api/health/ready # expect 503, database "down" (until 3b)
 ```
+
+A 503 from readiness at this point is **expected**: Atlas does not let Render in yet. The deploy still succeeds because Render's health check uses liveness (`/api/health`), and the backend keeps retrying the database in the background. The logs show `database.connect_failed` lines with growing retry intervals; that is normal until step 3b.
+
+### 3b. Allow Render in Atlas network access
+
+1. In Render, open the backend service → **Connect** (top right) → **Outbound** tab. Copy each IP range (CIDR notation, e.g. `203.0.113.0/24`). The ranges are shared by all Render services in the region.
+2. In Atlas → Security → **Network Access** → **Add IP Address**, add each range, with a comment such as `Render oregon`.
+3. Wait up to a minute. **No redeploy is needed**: the backend's retry loop connects on its own (retries back off to at most 30 seconds). Render's logs then show `database.connected`, and:
+
+```bash
+curl -i https://metaflow-api.onrender.com/api/health/ready # expect 200, database "up" with latencyMs
+```
+
+If it stays at 503 after two minutes, see Troubleshooting below.
 
 ---
 
@@ -142,10 +175,10 @@ The frontend is a static single-page app: Vercel builds it with Vite and serves 
 
 5. **Environment variables** (Production and Preview):
 
-   | Key                            | Value                                                                                   |
-   | ------------------------------ | --------------------------------------------------------------------------------------- |
-   | `VITE_API_BASE_URL`            | The Render URL, e.g. `https://metaflow-api.onrender.com` (no `/api`, no trailing slash) |
-   | `ENABLE_EXPERIMENTAL_COREPACK` | `1` _(optional: makes Vercel use exactly pnpm 10.34.9)_                                 |
+   | Key                            | Value                                                                                                                                                       |
+   | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+   | `VITE_API_BASE_URL`            | The Render URL, e.g. `https://metaflow-api.onrender.com` (no `/api`, no trailing slash)                                                                     |
+   | `ENABLE_EXPERIMENTAL_COREPACK` | `1` _(optional: pins exactly pnpm 10.34.9. Without it Vercel picks pnpm 9 or 10 from the lockfile; both were tested with these install and build commands)_ |
 
    Never add secrets here: every `VITE_*` value ends up in the public JavaScript. The build refuses `VITE_` names that look like secrets.
 

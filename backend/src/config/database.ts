@@ -25,7 +25,7 @@ export interface Database extends DatabaseHealthProbe {
 export interface DatabaseOptions {
   uri: string | undefined;
   logger: Logger;
-  /** Build indexes automatically. Must be false in production (see docs/database.md). */
+  /** Build indexes automatically. False in production (see docs/architecture.md, "Database"). */
   autoIndex: boolean;
   serverSelectionTimeoutMS?: number;
   maxRetryDelayMs?: number;

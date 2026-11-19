@@ -1,0 +1,45 @@
+# Render Blueprint — MetaFlow AI backend (Express API).
+# Spec: https://render.com/docs/blueprint-spec
+#
+# Why there is no rootDir: Render makes files outside a service's root directory unavailable
+# at build time, and the backend needs ../shared plus the root pnpm lockfile. The service
+# therefore builds from the repository root, and buildFilter limits auto-deploys to
+# changes that affect the backend.
+
+services:
+  - type: web
+    name: metaflow-api
+    runtime: node
+    plan: free
+    # Choose the region closest to your MongoDB Atlas cluster.
+    region: oregon
+    buildCommand: >-
+      corepack enable &&
+      pnpm install --frozen-lockfile --filter @metaflow/backend... --prod=false &&
+      pnpm --filter @metaflow/backend build
+    startCommand: node --enable-source-maps backend/dist/server.js
+    # Liveness only: a database blip should not make Render restart a healthy process.
+    healthCheckPath: /api/health
+    buildFilter:
+      paths:
+        - backend/**
+        - shared/**
+        - package.json
+        - pnpm-lock.yaml
+        - pnpm-workspace.yaml
+        - tsconfig.base.json
+        - .node-version
+        - render.yaml
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: '1'
+      - key: LOG_LEVEL
+        value: info
+      # Secrets: Render prompts for these when the Blueprint is created. Never commit them.
+      - key: MONGODB_URI
+        sync: false
+      # Exact frontend origin(s), comma-separated, https only, no trailing slash.
+      - key: CORS_ORIGINS
+        sync: false

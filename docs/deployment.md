@@ -71,7 +71,7 @@ If `git ls-remote origin` prints anything, **stop**: the GitHub repository alrea
 
 ## 2. MongoDB Atlas
 
-1. **Create a project and cluster** at <https://cloud.mongodb.com>. The free M0 tier is enough for now. Choose the cloud region **closest to your Render region** (the Blueprint uses Render's `oregon` region, so an AWS `us-west-2` cluster is a good match).
+1. **Create a project and cluster** at <https://cloud.mongodb.com>. The free M0 tier is enough for now. Keep the cluster and the Render service close to each other, because every database query crosses that distance. This project's cluster runs on **AWS `ap-south-1` (Mumbai)**, so the Blueprint deploys the backend to Render's **`singapore`** region, the closest Render region to Mumbai. If you ever recreate the cluster in another region, change `region` in `render.yaml` **before** creating the Render service: Render can't move an existing service to another region.
 2. **Create a database user** (Security → Database Access):
    - Username: `metaflow-api`. Use **Autogenerate Secure Password** and store it in a password manager.
    - Privileges: _Specific privileges_ → `readWrite` on database `metaflow` only. Do not use `atlasAdmin`.
@@ -98,7 +98,8 @@ The repository contains [`render.yaml`](../render.yaml).
 2. Render reads `render.yaml` and asks for the two secrets:
    - `MONGODB_URI`: the Atlas connection string from step 2.
    - `CORS_ORIGINS`: the Vercel production URL you will use, e.g. `https://metaflow-web.vercel.app`. Vercel URLs come from the project name, so choose the name now. You can change this value later (step 5).
-3. Apply. The first build takes a few minutes.
+3. Before applying, check that the service shows **Region: Singapore** and **Plan: Free**. The region can't be changed after creation.
+4. Apply. The first build takes a few minutes.
 
 ### Option B — Manual web service
 
@@ -107,6 +108,7 @@ The repository contains [`render.yaml`](../render.yaml).
 | Setting           | Value                                                                                                                                                    |
 | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Root Directory    | _(leave empty)_: the build needs `shared/` and the root lockfile, and Render hides files outside the root directory                                      |
+| Region            | Singapore: closest to the Atlas cluster in Mumbai (`ap-south-1`). It can't be changed after the service is created                                       |
 | Runtime           | Node                                                                                                                                                     |
 | Build Command     | `corepack enable && pnpm install --frozen-lockfile --filter @metaflow/backend... --prod=false && pnpm --filter @metaflow/backend build`                  |
 | Start Command     | `node --enable-source-maps backend/dist/server.js`                                                                                                       |
@@ -144,7 +146,7 @@ A 503 from readiness at this point is **expected**: Atlas does not let Render in
 ### 3b. Allow Render in Atlas network access
 
 1. In Render, open the backend service → **Connect** (top right) → **Outbound** tab. Copy each IP range (CIDR notation, e.g. `203.0.113.0/24`). The ranges are shared by all Render services in the region.
-2. In Atlas → Security → **Network Access** → **Add IP Address**, add each range, with a comment such as `Render oregon`.
+2. In Atlas → Security → **Network Access** → **Add IP Address**, add each range, with a comment such as `Render singapore`.
 3. Wait up to a minute. **No redeploy is needed**: the backend's retry loop connects on its own (retries back off to at most 30 seconds). Render's logs then show `database.connected`, and:
 
 ```bash

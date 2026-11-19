@@ -12,7 +12,7 @@ services:
     runtime: node
     plan: free
     # Choose the region closest to your MongoDB Atlas cluster.
-    region: oregon
+    region: singapore
     buildCommand: >-
       corepack enable &&
       pnpm install --frozen-lockfile --filter @metaflow/backend... --prod=false &&

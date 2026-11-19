@@ -13,7 +13,7 @@ Guidance for AI agents and contributors working in this repository. Read this fi
 1. **Never rebuild from scratch, restructure wholesale, or delete working functionality** without explicit owner approval.
 2. **Inspect before editing.** Read the existing implementation and follow its patterns.
 3. **Small, focused, testable changes.** One concern per commit.
-4. **No fake functionality.** Unbuilt modules are shown as disabled "Soon" entries, never as links to placeholder pages or with mock data.
+4. **No fake functionality.** Unbuilt modules get an honest empty-state page (what the module will do and which milestone delivers it) and a "Soon" label in the navigation. Never mock data, sample numbers, or forms and buttons that look like they work.
 5. **Never claim something works without running it.** Report actual command output, including failures and skipped checks. Never claim a deployment works until the live URLs have been tested.
 6. **Keep docs in sync.** Update `README.md`, `.env.example` and `docs/` in the same change as the code they describe.
 7. If a requested change conflicts with these rules or the architecture, **explain the conflict first**.
@@ -28,11 +28,11 @@ Guidance for AI agents and contributors working in this repository. Read this fi
 
 ## Architecture
 
-| Folder      | Owns                                                                    | Must never contain                                            |
-| ----------- | ----------------------------------------------------------------------- | ------------------------------------------------------------- |
-| `frontend/` | UI, client-side state, calls to the backend via `src/lib/api-client.ts` | DB access, Meta/AI credentials, any non-`NEXT_PUBLIC_` secret |
-| `backend/`  | Auth, sessions, authorization, DB, integrations, business logic         | UI code                                                       |
-| `shared/`   | Zod contracts, inferred types, constants                                | Secrets, DB code, Node- or browser-only APIs                  |
+| Folder      | Owns                                                                         | Must never contain                                                          |
+| ----------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `frontend/` | UI, client-side state, calls to the backend via `src/services/api-client.ts` | DB access, Meta/AI credentials, any secret (every `VITE_*` value is public) |
+| `backend/`  | Auth, sessions, authorization, DB, integrations, business logic              | UI code                                                                     |
+| `shared/`   | Zod contracts, inferred types, constants                                     | Secrets, DB code, Node- or browser-only APIs                                |
 
 `frontend` and `backend` never import each other; shared code goes into `shared/`.
 
@@ -49,11 +49,16 @@ Guidance for AI agents and contributors working in this repository. Read this fi
 
 ## Frontend conventions
 
-- All backend calls go through `apiRequest()` with a response schema from `shared`. It sends cookies, applies a timeout and validates responses.
-- Only `NEXT_PUBLIC_*` variables may be used in the browser; they are public. The API base URL is validated at build time in `next.config.ts`.
-- UI primitives live in `src/components/ui` (shadcn/ui, `new-york` style) and import `cn` from `@/lib/utils`. When adding shadcn components with the CLI, keep that import: recent CLI versions switch it to the separate `cn` npm package.
-- Every data view handles loading, success, empty and error states.
-- The design tokens are in `src/app/globals.css`; use them (`bg-primary`, `text-muted-foreground`, `bg-success`, …) instead of raw colors.
+- **Stack:** React 19 single-page app built with Vite, routed with React Router (`react-router-dom`). No server rendering; Vercel serves static files.
+- **Folders:** `pages/` (one component per route), `routes/` (route table, guards, navigation config), `components/ui` (shadcn/ui primitives), `components/layout`, `components/common`, feature folders such as `components/system-status`, `services/` (API calls), `hooks/`, `contexts/`, `lib/` (config, utilities), `assets/`.
+- **Routes:** add a route to `routes/router.tsx`; signed-in pages go under `ProtectedRoute` + `DashboardLayout` and are code-split with `lazy`. New modules are listed once in `routes/navigation.ts`, which drives both the sidebar and the routes.
+- **Auth guards** (`ProtectedRoute`, `GuestRoute`, `contexts/`) only control what the UI shows. The backend must authorize every request. Until sign-in exists, the session state is `unavailable` and the dashboard runs in labelled preview mode.
+- **API calls** go through `apiRequest()` in `services/api-client.ts` with a response schema from `shared`. It sends cookies, applies a timeout and validates responses. Never call `fetch` directly from components.
+- **Environment:** only `VITE_*` variables reach the browser, and all of them are public. `vite.config.ts` validates `VITE_API_BASE_URL` at build time and refuses secret-looking `VITE_` names. Read them only in `lib/config.ts`.
+- **Imports:** never import backend code (lint-enforced); use the `@metaflow/shared` entry point only.
+- UI primitives live in `src/components/ui` (shadcn/ui, `new-york` style) and import `cn` from `@/lib/utils`. When adding shadcn components with the CLI, keep that import: recent CLI versions switch it to the separate `cn` npm package. Remove any `'use client'` lines the CLI adds; they mean nothing in Vite.
+- Every page has exactly one `<h1>` and sets its tab title with `useDocumentTitle()`. Every data view handles loading, success, empty and error states.
+- The design tokens are in `src/index.css`; use them (`bg-primary`, `text-muted-foreground`, `bg-success`, …) instead of raw colors.
 
 ## Security
 
@@ -71,12 +76,13 @@ pnpm format:check
 pnpm typecheck
 pnpm lint
 pnpm test
-pnpm build      # set NEXT_PUBLIC_API_BASE_URL for a production-like frontend build
+pnpm build      # set VITE_API_BASE_URL for a production-like (cross-origin) frontend build
 ```
 
-For behavior changes, also run the built apps (`pnpm start:backend`, `pnpm start:frontend`) and check the affected flow in a browser.
+For behavior changes, also run the built apps (`pnpm start:backend`, `pnpm start:frontend`, which serves `frontend/dist` with `vite preview`) and check the affected flow in a browser, including a reload on a nested route.
 
 ## Git
 
 - Branch `main`. Conventional commit messages (`feat:`, `fix:`, `chore:`, `docs:`, `test:`).
 - Check `git status` and the staged file list before committing; `.env*` (except `.env.example`), `dist/`, `.next/` and keys must never appear.
+- pnpm only: `package-lock.json` and `yarn.lock` are git-ignored because a stray one would make Vercel or Render use the wrong package manager.

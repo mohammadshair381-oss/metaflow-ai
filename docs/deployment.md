@@ -124,20 +124,34 @@ curl -i https://metaflow-api.onrender.com/api/health/ready
 
 ## 4. Frontend on Vercel
 
+The frontend is a static single-page app: Vercel builds it with Vite and serves `frontend/dist/`. No serverless functions are involved.
+
 1. **Add New → Project**, import the GitHub repository.
-2. **Root Directory:** `frontend`. Framework preset: Next.js (detected automatically).
+2. **Root Directory:** `frontend`.
 3. Keep **"Include files outside of the Root Directory in the Build Step"** enabled (the default). The frontend imports `shared/`.
-4. Install and build commands come from [`frontend/vercel.json`](../frontend/vercel.json) and Next.js defaults. Do not override them.
+4. Build settings are defined in [`frontend/vercel.json`](../frontend/vercel.json), so leave the dashboard overrides off:
+
+   | Setting          | Value (from `vercel.json`)                                      |
+   | ---------------- | --------------------------------------------------------------- |
+   | Framework preset | Vite                                                            |
+   | Install Command  | `pnpm install --frozen-lockfile --filter @metaflow/frontend...` |
+   | Build Command    | `pnpm build` (type-check, then `vite build`)                    |
+   | Output Directory | `dist`                                                          |
+
+   `vercel.json` also adds the **SPA fallback** (every path is served `index.html`, so refreshing `/ai-studio` works), security headers, and long-term caching for the hashed files in `/assets/`.
+
 5. **Environment variables** (Production and Preview):
 
    | Key                            | Value                                                                                   |
    | ------------------------------ | --------------------------------------------------------------------------------------- |
-   | `NEXT_PUBLIC_API_BASE_URL`     | The Render URL, e.g. `https://metaflow-api.onrender.com` (no `/api`, no trailing slash) |
+   | `VITE_API_BASE_URL`            | The Render URL, e.g. `https://metaflow-api.onrender.com` (no `/api`, no trailing slash) |
    | `ENABLE_EXPERIMENTAL_COREPACK` | `1` _(optional: makes Vercel use exactly pnpm 10.34.9)_                                 |
+
+   Never add secrets here: every `VITE_*` value ends up in the public JavaScript. The build refuses `VITE_` names that look like secrets.
 
 6. Deploy.
 
-The build **fails on purpose** if `NEXT_PUBLIC_API_BASE_URL` is missing or is not an `https` origin in production, so a misconfigured frontend never ships. `NEXT_PUBLIC_*` values are baked in at build time: after changing one, **redeploy**.
+The build **fails on purpose** if `VITE_API_BASE_URL` is missing, has a path, or is not `https` in production, so a misconfigured frontend never ships. `VITE_*` values are baked in at build time: after changing one, **redeploy**.
 
 Node.js version: Vercel reads `engines.node` (`24.x`) from `frontend/package.json`. Confirm under Project Settings → Build and Deployment.
 
@@ -153,7 +167,7 @@ The backend only answers browsers whose origin is listed in `CORS_ORIGINS`.
 
 **Preview deployments** have their own URLs (`https://metaflow-web-git-<branch>-<team>.vercel.app`) and are **not** allowed by default. That is deliberate. Add a specific preview origin temporarily if you need to test one against the production API.
 
-**Custom domains (recommended before sign-in ships):** see [architecture.md → Cross-site cookies](architecture.md#cross-site-cookies-and-custom-domains). With `app.yourdomain.com` and `api.yourdomain.com`, set `CORS_ORIGINS=https://app.yourdomain.com` and `NEXT_PUBLIC_API_BASE_URL=https://api.yourdomain.com`, then redeploy the frontend.
+**Custom domains (recommended before sign-in ships):** see [architecture.md → Cross-site cookies](architecture.md#cross-site-cookies-and-custom-domains). With `app.yourdomain.com` and `api.yourdomain.com`, set `CORS_ORIGINS=https://app.yourdomain.com` and `VITE_API_BASE_URL=https://api.yourdomain.com`, then redeploy the frontend.
 
 ---
 
@@ -178,20 +192,24 @@ curl -s -D - -o /dev/null -H "Origin: $WEB" "$API/api/health" | grep -i access-c
 curl -s -D - -o /dev/null -H "Origin: https://example.com" "$API/api/health" | grep -i access-control-allow
 ```
 
-5. Open the frontend URL in a browser. The **Backend connection** panel must show **Connected**, with "Responding in … ms" and "MongoDB connected".
+5. Open `$WEB/dashboard` in a browser. The **Backend connection** panel must show **Connected**, with "Responding in … ms" and "MongoDB connected".
 6. In the browser developer tools (Network tab), the requests to `/api/health` and `/api/health/ready` must succeed with no CORS errors in the Console.
-7. In Render → Logs, there must be no `database.connect_failed` entries after startup.
+7. **Deep links:** open `$WEB/ai-studio` directly and press reload. The AI Studio page must load, not a Vercel 404. Also check that `$WEB/no-such-page` shows the app's "Page not found".
+8. On a phone (or the browser's device toolbar), open the menu button on the dashboard: the navigation drawer must open and navigate.
+9. In Render → Logs, there must be no `database.connect_failed` entries after startup.
 
 ### Troubleshooting
 
-| Symptom                                                      | Likely cause                                                                                                       |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| Panel shows **Unreachable**, console shows a CORS error      | `CORS_ORIGINS` does not exactly match the Vercel URL (scheme, host, no trailing slash)                             |
-| Panel shows **Unreachable**, no CORS error                   | Wrong `NEXT_PUBLIC_API_BASE_URL` (redeploy after fixing), or the Render service is down                            |
-| Panel shows "Still waiting…" for up to a minute              | Free Render instance waking from sleep; expected                                                                   |
-| Panel shows **Degraded** / readiness `down`                  | Atlas unreachable: wrong `MONGODB_URI`, password not URL-encoded, or Render ranges missing in Atlas Network Access |
-| Render deploy fails with "Invalid environment configuration" | The log names the missing or invalid variable                                                                      |
-| Vercel build fails mentioning `NEXT_PUBLIC_API_BASE_URL`     | Variable missing, has a path such as `/api`, or uses `http` in production                                          |
+| Symptom                                                               | Likely cause                                                                                                       |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Panel shows **Unreachable**, console shows a CORS error               | `CORS_ORIGINS` does not exactly match the Vercel URL (scheme, host, no trailing slash)                             |
+| Panel shows **Unreachable**, no CORS error                            | Wrong `VITE_API_BASE_URL` (redeploy after fixing), or the Render service is down                                   |
+| Panel shows "Still waiting…" for up to a minute                       | Free Render instance waking from sleep; expected                                                                   |
+| Panel shows **Degraded** / readiness `down`                           | Atlas unreachable: wrong `MONGODB_URI`, password not URL-encoded, or Render ranges missing in Atlas Network Access |
+| Render deploy fails with "Invalid environment configuration"          | The log names the missing or invalid variable                                                                      |
+| Vercel build fails mentioning `VITE_API_BASE_URL`                     | Variable missing, has a path such as `/api`, or uses `http` in production                                          |
+| Vercel build fails with "Refusing to expose secret-looking variables" | A `VITE_` variable name looks like a secret; move that value to the backend                                        |
+| Refreshing a page such as `/calendar` gives a Vercel 404              | `vercel.json` was not picked up: check that Root Directory is `frontend`                                           |
 
 ### Rolling back
 

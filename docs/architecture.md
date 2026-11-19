@@ -6,7 +6,7 @@
  Browser
    │  HTTPS
    ▼
- Vercel ── frontend/ (Next.js 15, React 19)
+ Vercel ── frontend/ (React 19 single-page app, built by Vite, served as static files)
    │
    │  HTTPS, fetch with credentials: 'include'
    │  allowed only for origins listed in CORS_ORIGINS
@@ -28,9 +28,76 @@ The frontend never talks to the database or to third-party APIs (Meta, AI provid
 | `@metaflow/backend`  | `backend/`  | HTTP API, auth, authorization, database, integrations                       | `shared`, server libs |
 | `@metaflow/frontend` | `frontend/` | User interface; calls the backend through one API client                    | `shared`, UI libs     |
 
-`frontend` and `backend` never import each other. Anything both need goes into `shared`.
+`frontend` and `backend` never import each other (the frontend's ESLint config enforces this). Anything both need goes into `shared`, imported through its single entry point.
 
-`shared` is consumed as TypeScript source: Next.js compiles it via `transpilePackages`, and the backend's tsup build bundles it into `backend/dist/server.js`. No separate build step is needed.
+`shared` is consumed as TypeScript source: Vite compiles it along with the frontend, and the backend's tsup build bundles it into `backend/dist/server.js`. No separate build step is needed.
+
+## Frontend
+
+A client-rendered React 19 single-page app. Vite builds it into static files in `frontend/dist/`, and Vercel serves them; there is no frontend server.
+
+### Structure
+
+```
+index.html            HTML shell; loads src/main.tsx
+src/main.tsx          mounts <App/>, loads fonts and styles
+src/App.tsx           AuthProvider + RouterProvider
+src/routes/           router.tsx (route table), protected-route.tsx, guest-route.tsx,
+                      navigation.ts (modules: path, label, icon, description, milestone)
+src/pages/            one component per route
+src/components/       ui/ (shadcn/ui), layout/ (shells, nav), common/ (empty state, notices…),
+                      system-status/, overview/
+src/services/         api-client.ts (all HTTP), health.service.ts
+src/contexts/         session state for the UI
+src/hooks/            use-backend-status, use-document-title
+src/lib/              config.ts (public env), utils.ts
+```
+
+### Routing
+
+React Router (`createBrowserRouter`). Public routes (`/`, `/login`, `/register`) are in the main bundle. The signed-in area (`DashboardLayout`, `/dashboard` and the module pages) is code-split with route `lazy` functions, so the landing page doesn't download it.
+
+Deep links and browser refreshes on nested paths work because the server answers every unknown path with `index.html`: Vite's dev and preview servers do this by default, and on Vercel the `rewrites` rule in `frontend/vercel.json` does it. Static files are served before rewrites apply, so assets are unaffected.
+
+### Session state and route guards
+
+`contexts/` holds an `AuthState`: `unavailable | loading | anonymous | authenticated`.
+
+| State           | `ProtectedRoute`                            | `GuestRoute` (`/login`, `/register`)                                       |
+| --------------- | ------------------------------------------- | -------------------------------------------------------------------------- |
+| `unavailable`   | Renders, with a "Preview mode" notice       | Renders                                                                    |
+| `loading`       | Shows "Checking your session…"              | Renders                                                                    |
+| `anonymous`     | Redirects to `/login`, remembering the path | Renders                                                                    |
+| `authenticated` | Renders                                     | Redirects to the remembered path or `/dashboard`; never to an external URL |
+
+Sign-in is not built, so the provider always supplies `unavailable`. The sign-in milestone replaces that constant with a cookie-based session check. The guards only shape the UI; **the API authorizes every request on its own**.
+
+### API access
+
+All HTTP goes through `apiRequest()` (`services/api-client.ts`), which:
+
+- prefixes `VITE_API_BASE_URL`, or nothing for same-origin `/api`;
+- sends `credentials: 'include'`, ready for cookie sessions;
+- applies a timeout (15 s) and passes caller cancellations through;
+- classifies failures as `network`, `timeout`, `http` (with the backend's error code and request ID) or `invalid_response`;
+- validates every response against a Zod schema from `shared`.
+
+| Environment           | `VITE_API_BASE_URL`        | Request path                                                 |
+| --------------------- | -------------------------- | ------------------------------------------------------------ |
+| `pnpm dev`            | empty                      | Same-origin `/api` → Vite proxy → `localhost:4000` (no CORS) |
+| `pnpm start:frontend` | empty or a URL             | Same as dev, or cross-origin when set                        |
+| Vercel                | `https://<render-service>` | Cross-origin to Render, credentialed CORS                    |
+
+The dashboard's connection status comes from live calls to `/api/health` and `/api/health/ready`: **Connected** when both succeed and the API is ready, **Degraded** when the API answers but readiness fails, and **Unreachable** when liveness fails (down, CORS refusal, timeout or unrecognized response).
+
+### Configuration safety
+
+Only `VITE_*` variables are embedded in the bundle, and all of them are public. `vite.config.ts`:
+
+- refuses to build if any `VITE_` variable name looks like a secret (`SECRET`, `PASSWORD`, `TOKEN`, `MONGODB`, `API_KEY`, …);
+- requires `VITE_API_BASE_URL` on Vercel, accepts only an `http(s)` origin with no path, and requires `https` for production deployments.
+
+`API_PROXY_TARGET` (dev proxy target) is read by the build tool only and never reaches the browser.
 
 ## Backend
 
@@ -147,7 +214,7 @@ On default hosting domains, the frontend (`*.vercel.app`) and the API (`*.onrend
 
 Both are then the **same site** (`yourdomain.com`). The session cookie is first-party, `SameSite=Lax` works in every browser, and CORS still restricts which origins may call the API. Both Vercel and Render support custom domains with automatic TLS.
 
-Interim alternative (not implemented): proxy `/api/*` through Next.js rewrites on the Vercel domain, so the browser sees a single origin. This adds a network hop and couples the API to Vercel's proxy limits, so it is a stopgap, not the target architecture.
+Interim alternative (not implemented): add a Vercel rewrite from `/api/:path*` to the Render URL in `frontend/vercel.json` and leave `VITE_API_BASE_URL` empty, so the browser sees a single origin, as it does with the local dev proxy (the `VITE_API_BASE_URL` requirement in `vite.config.ts` would have to be relaxed for that). This adds a network hop and couples the API to Vercel's proxy limits, so it is a stopgap, not the target architecture.
 
 The health checks in this milestone use no cookies, so they work on the default domains today.
 

@@ -1,5 +1,3 @@
-'use client';
-
 import { Menu } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -28,7 +26,7 @@ export function MobileNav() {
         <SheetHeader className="border-b px-5 py-4">
           <SheetTitle asChild>
             <div>
-              <Brand />
+              <Brand to="/dashboard" />
             </div>
           </SheetTitle>
           <SheetDescription className="sr-only">Main navigation</SheetDescription>

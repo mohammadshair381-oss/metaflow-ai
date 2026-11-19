@@ -6,7 +6,8 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  /* Inter is self-hosted via @fontsource-variable/inter (imported in main.tsx). */
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   --color-background: var(--background);

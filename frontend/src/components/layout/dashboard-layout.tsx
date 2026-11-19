@@ -1,15 +1,21 @@
-import type { ReactNode } from 'react';
+import { Link, Outlet } from 'react-router-dom';
+import { PreviewNotice } from '@/components/common/preview-notice';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { useAuth } from '@/contexts/auth-context';
 import { Brand } from './brand';
 import { MobileNav } from './mobile-nav';
 import { SidebarNav } from './sidebar-nav';
 
-export function AppShell({ children }: { children: ReactNode }) {
+/** Shell for every signed-in page: sidebar on large screens, drawer navigation on small ones. */
+export function DashboardLayout() {
+  const auth = useAuth();
+
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-[16rem_1fr]">
       <aside className="bg-sidebar sticky top-0 hidden h-dvh flex-col border-r lg:flex">
         <div className="flex h-16 shrink-0 items-center px-5">
-          <Brand />
+          <Brand to="/dashboard" />
         </div>
         <div className="flex-1 overflow-y-auto px-3 pt-2 pb-6">
           <SidebarNav />
@@ -23,15 +29,23 @@ export function AppShell({ children }: { children: ReactNode }) {
         <header className="bg-background/85 sticky top-0 z-20 flex h-16 items-center gap-3 border-b px-4 backdrop-blur sm:px-6">
           <MobileNav />
           <div className="lg:hidden">
-            <Brand />
+            <Brand to="/dashboard" />
           </div>
           <div className="ml-auto flex items-center gap-2">
             <Badge variant="outline" className="hidden sm:inline-flex">
               Milestone 1 · Foundation
             </Badge>
+            {auth.status !== 'authenticated' ? (
+              <Button asChild variant="ghost" size="sm">
+                <Link to="/login">Sign in</Link>
+              </Button>
+            ) : null}
           </div>
         </header>
-        <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</main>
+        <main className="flex flex-1 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+          {auth.status === 'unavailable' ? <PreviewNotice /> : null}
+          <Outlet />
+        </main>
       </div>
     </div>
   );

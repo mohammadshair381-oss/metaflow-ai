@@ -1,9 +1,7 @@
-'use client';
-
 import type { HealthResponse, ReadinessResponse } from '@metaflow/shared';
 import { useCallback, useEffect, useState } from 'react';
-import { ApiRequestError, type ApiResponse } from '@/lib/api-client';
-import { fetchHealth, fetchReadiness } from '@/lib/health';
+import { ApiRequestError, type ApiResponse } from '@/services/api-client';
+import { fetchHealth, fetchReadiness } from '@/services/health.service';
 
 export type CheckState<T> =
   | { phase: 'loading' }

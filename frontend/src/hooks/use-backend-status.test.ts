@@ -1,6 +1,6 @@
 import type { HealthResponse, ReadinessResponse } from '@metaflow/shared';
 import { describe, expect, it } from 'vitest';
-import { ApiRequestError } from '@/lib/api-client';
+import { ApiRequestError } from '@/services/api-client';
 import { type CheckState, deriveOverallStatus } from './use-backend-status';
 
 const health: CheckState<HealthResponse> = {

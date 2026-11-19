@@ -2,7 +2,7 @@ import { CircleCheck, CircleDashed } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 const BUILT_IN_THIS_MILESTONE = [
-  'Web app shell (this page)',
+  'React web app with routing (this page)',
   'API with liveness and readiness checks',
   'MongoDB readiness reporting',
   'Credentialed CORS between web app and API',

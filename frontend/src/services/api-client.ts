@@ -1,6 +1,6 @@
 import { REQUEST_ID_HEADER, apiErrorResponseSchema } from '@metaflow/shared';
 import type { z } from 'zod';
-import { API_BASE_URL } from './config';
+import { API_BASE_URL } from '@/lib/config';
 
 export type ApiErrorKind = 'network' | 'timeout' | 'http' | 'invalid_response';
 
@@ -134,7 +134,7 @@ export async function apiRequest<T>(
   if (!parsed.success) {
     throw new ApiRequestError(
       'invalid_response',
-      'The API returned a response this app does not recognize. Check that NEXT_PUBLIC_API_BASE_URL points at the MetaFlow backend.',
+      'The API returned a response this app does not recognize. Check that VITE_API_BASE_URL points at the MetaFlow backend.',
       { status: response.status, requestId },
     );
   }

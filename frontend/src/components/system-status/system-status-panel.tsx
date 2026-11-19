@@ -1,5 +1,3 @@
-'use client';
-
 import { API_ROUTES, type HealthResponse, type ReadinessResponse } from '@metaflow/shared';
 import {
   CircleCheck,
@@ -25,7 +23,7 @@ import {
 } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { type CheckState, type OverallStatus, useBackendStatus } from '@/hooks/use-backend-status';
-import { API_BASE_URL, IS_DEFAULT_API_BASE_URL } from '@/lib/config';
+import { API_BASE_URL, USES_SAME_ORIGIN_API } from '@/lib/config';
 import { cn } from '@/lib/utils';
 
 type Tone = 'success' | 'warning' | 'error' | 'neutral';
@@ -236,6 +234,7 @@ function formatTime(date: Date): string {
 export function SystemStatusPanel() {
   const { health, readiness, overall, isSlow, checkedAt, refresh } = useBackendStatus();
   const isChecking = overall === 'checking';
+  const apiOrigin = USES_SAME_ORIGIN_API ? window.location.origin : API_BASE_URL;
 
   return (
     <Card>
@@ -253,9 +252,11 @@ export function SystemStatusPanel() {
       <CardContent className="flex flex-col gap-4">
         <div className="bg-muted/60 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-3 py-2 text-xs">
           <span className="text-muted-foreground">API endpoint</span>
-          <code className="font-mono font-medium break-all">{API_BASE_URL}</code>
-          {IS_DEFAULT_API_BASE_URL ? (
-            <span className="text-muted-foreground">(local development default)</span>
+          <code className="font-mono font-medium break-all">{apiOrigin}</code>
+          {USES_SAME_ORIGIN_API ? (
+            <span className="text-muted-foreground">
+              (same origin: /api is proxied to the local backend)
+            </span>
           ) : null}
         </div>
 
@@ -279,15 +280,24 @@ export function SystemStatusPanel() {
           <div className="border-destructive/30 bg-destructive/5 rounded-md border px-3 py-3 text-xs leading-relaxed">
             <p className="mb-1.5 font-semibold">Things to check</p>
             <ul className="text-muted-foreground list-disc space-y-1 pl-4">
-              <li>The backend is running and the endpoint above is its correct URL.</li>
-              <li>
-                This site&apos;s origin is listed in the backend&apos;s{' '}
-                <code className="font-mono">CORS_ORIGINS</code>.
-              </li>
+              {USES_SAME_ORIGIN_API ? (
+                <li>
+                  The local backend is running: <code className="font-mono">pnpm dev:backend</code>{' '}
+                  (port 4000).
+                </li>
+              ) : (
+                <>
+                  <li>The backend is running and the endpoint above is its correct URL.</li>
+                  <li>
+                    This site&apos;s origin is listed in the backend&apos;s{' '}
+                    <code className="font-mono">CORS_ORIGINS</code>.
+                  </li>
+                </>
+              )}
               <li>
                 The backend health check answers: open{' '}
                 <code className="font-mono break-all">
-                  {API_BASE_URL}
+                  {apiOrigin}
                   {API_ROUTES.health}
                 </code>
               </li>

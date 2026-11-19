@@ -1,0 +1,198 @@
+# Deployment guide
+
+MetaFlow AI deploys as two independent services from one GitHub repository:
+
+| Part     | Host          | Source folder | Public URL (example)                 |
+| -------- | ------------- | ------------- | ------------------------------------ |
+| Frontend | Vercel        | `frontend/`   | `https://metaflow-web.vercel.app`    |
+| Backend  | Render        | `backend/`    | `https://metaflow-api.onrender.com`  |
+| Database | MongoDB Atlas | —             | private, reached only by the backend |
+
+The background worker is **not** deployed yet; it arrives with the publishing milestone.
+
+Follow the steps in order. Each one produces a value the next one needs.
+
+1. [Push to GitHub](#1-push-the-repository-to-github)
+2. [Create the MongoDB Atlas database](#2-mongodb-atlas)
+3. [Deploy the backend on Render](#3-backend-on-render)
+4. [Deploy the frontend on Vercel](#4-frontend-on-vercel)
+5. [Connect them with CORS](#5-connect-frontend-and-backend)
+6. [Verify the live system](#6-verify-the-live-system)
+
+---
+
+## 1. Push the repository to GitHub
+
+The local repository is already initialized on branch `main` with its commits. It has no remote yet.
+
+**Check before pushing** that no secrets are tracked:
+
+```bash
+git status                          # must be clean
+git ls-files | grep -i "\.env"      # must list only .env.example
+```
+
+**Create the GitHub repository** at <https://github.com/new>:
+
+- Name: e.g. `metaflow-ai`. Visibility: **Private** is recommended.
+- Do **not** add a README, .gitignore or license (the repository already has them).
+
+**Connect and push** (replace `<your-username>` with your GitHub account or organization):
+
+```bash
+git remote add origin https://github.com/<your-username>/metaflow-ai.git
+git push -u origin main
+```
+
+**Authentication.** Git for Windows includes Git Credential Manager: the first push opens a browser window to sign in to GitHub, and the credential is stored securely afterwards. Alternatively, install the GitHub CLI (`winget install GitHub.cli`), run `gh auth login`, then push. Never paste a personal access token into the remote URL.
+
+---
+
+## 2. MongoDB Atlas
+
+1. **Create a project and cluster** at <https://cloud.mongodb.com>. The free M0 tier is enough for now. Choose the cloud region **closest to your Render region** (the Blueprint uses Render's `oregon` region, so an AWS `us-west-2` cluster is a good match).
+2. **Create a database user** (Security → Database Access):
+   - Username: `metaflow-api`. Use **Autogenerate Secure Password** and store it in a password manager.
+   - Privileges: _Specific privileges_ → `readWrite` on database `metaflow` only. Do not use `atlasAdmin`.
+3. **Restrict network access** (Security → Network Access):
+   - Recommended: add Render's outbound IP ranges. In Render, open the backend service → **Connect** (top right) → **Outbound** tab, and add each CIDR range to Atlas. Ranges are shared by all Render services in that region.
+   - Only if you cannot do that yet: `0.0.0.0/0` (anywhere) works, but then the password is the only protection. Replace it with the Render ranges as soon as the service exists.
+4. **Get the connection string**: Database → Connect → Drivers. Copy the `mongodb+srv://` string, insert the password (URL-encode characters such as `@ : / ? # %`), and put the database name before the query string:
+
+   ```
+   mongodb+srv://metaflow-api:<password>@<cluster-host>/metaflow?retryWrites=true&w=majority
+   ```
+
+   This is the `MONGODB_URI` secret. It goes only into Render, never into the repository or the frontend.
+
+**Indexes:** the backend never builds indexes automatically in production (`autoIndex` is off). When models arrive, their indexes are applied with a reviewed, manual step; see [architecture.md → Database](architecture.md#database).
+
+---
+
+## 3. Backend on Render
+
+### Option A — Blueprint (recommended)
+
+The repository contains [`render.yaml`](../render.yaml).
+
+1. In Render: **New → Blueprint**, connect GitHub, select the repository.
+2. Render reads `render.yaml` and asks for the two secrets:
+   - `MONGODB_URI`: the Atlas connection string from step 2.
+   - `CORS_ORIGINS`: the Vercel production URL you will use, e.g. `https://metaflow-web.vercel.app`. Vercel URLs come from the project name, so choose the name now. You can change this value later (step 5).
+3. Apply. The first build takes a few minutes.
+
+### Option B — Manual web service
+
+**New → Web Service**, select the repository, and set:
+
+| Setting           | Value                                                                                                                                                    |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Root Directory    | _(leave empty)_: the build needs `shared/` and the root lockfile, and Render hides files outside the root directory                                      |
+| Runtime           | Node                                                                                                                                                     |
+| Build Command     | `corepack enable && pnpm install --frozen-lockfile --filter @metaflow/backend... --prod=false && pnpm --filter @metaflow/backend build`                  |
+| Start Command     | `node --enable-source-maps backend/dist/server.js`                                                                                                       |
+| Health Check Path | `/api/health`                                                                                                                                            |
+| Build Filters     | Included paths: `backend/**`, `shared/**`, `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `.node-version`, `render.yaml` |
+
+Environment variables:
+
+| Key            | Value                                      |
+| -------------- | ------------------------------------------ |
+| `NODE_ENV`     | `production`                               |
+| `TRUST_PROXY`  | `1`                                        |
+| `LOG_LEVEL`    | `info`                                     |
+| `MONGODB_URI`  | _(secret, from Atlas)_                     |
+| `CORS_ORIGINS` | `https://<your-vercel-project>.vercel.app` |
+
+Do not set `PORT`; Render provides it. Node 24 is selected by the repository's `.node-version` file.
+
+### Notes
+
+- **pnpm:** `corepack enable` activates the pnpm version pinned in `package.json` (`pnpm@10.34.9`). If corepack fails on Render, replace it with `npm install -g pnpm@10.34.9 &&`.
+- **`--prod=false`** keeps build tools (tsup, TypeScript) installed even though `NODE_ENV=production`. pnpm 10.34 already does this, but the flag protects against other pnpm versions.
+- **The service refuses to start** if `MONGODB_URI` or `CORS_ORIGINS` is missing or invalid in production. The deploy log lists which variable is wrong without printing its value.
+- **Free plan:** the instance sleeps after 15 minutes without traffic and takes up to about a minute to wake. The frontend tells users when that is happening. A paid instance avoids it.
+
+When the deploy is live, note the service URL (e.g. `https://metaflow-api.onrender.com`) and check it:
+
+```bash
+curl https://metaflow-api.onrender.com/api/health
+curl -i https://metaflow-api.onrender.com/api/health/ready
+```
+
+---
+
+## 4. Frontend on Vercel
+
+1. **Add New → Project**, import the GitHub repository.
+2. **Root Directory:** `frontend`. Framework preset: Next.js (detected automatically).
+3. Keep **"Include files outside of the Root Directory in the Build Step"** enabled (the default). The frontend imports `shared/`.
+4. Install and build commands come from [`frontend/vercel.json`](../frontend/vercel.json) and Next.js defaults. Do not override them.
+5. **Environment variables** (Production and Preview):
+
+   | Key                            | Value                                                                                   |
+   | ------------------------------ | --------------------------------------------------------------------------------------- |
+   | `NEXT_PUBLIC_API_BASE_URL`     | The Render URL, e.g. `https://metaflow-api.onrender.com` (no `/api`, no trailing slash) |
+   | `ENABLE_EXPERIMENTAL_COREPACK` | `1` _(optional: makes Vercel use exactly pnpm 10.34.9)_                                 |
+
+6. Deploy.
+
+The build **fails on purpose** if `NEXT_PUBLIC_API_BASE_URL` is missing or is not an `https` origin in production, so a misconfigured frontend never ships. `NEXT_PUBLIC_*` values are baked in at build time: after changing one, **redeploy**.
+
+Node.js version: Vercel reads `engines.node` (`24.x`) from `frontend/package.json`. Confirm under Project Settings → Build and Deployment.
+
+---
+
+## 5. Connect frontend and backend
+
+The backend only answers browsers whose origin is listed in `CORS_ORIGINS`.
+
+1. Copy the exact Vercel production URL (e.g. `https://metaflow-web.vercel.app`).
+2. In Render → backend service → Environment, set `CORS_ORIGINS` to that value. Separate several origins with commas. No trailing slash.
+3. Save; Render redeploys automatically.
+
+**Preview deployments** have their own URLs (`https://metaflow-web-git-<branch>-<team>.vercel.app`) and are **not** allowed by default. That is deliberate. Add a specific preview origin temporarily if you need to test one against the production API.
+
+**Custom domains (recommended before sign-in ships):** see [architecture.md → Cross-site cookies](architecture.md#cross-site-cookies-and-custom-domains). With `app.yourdomain.com` and `api.yourdomain.com`, set `CORS_ORIGINS=https://app.yourdomain.com` and `NEXT_PUBLIC_API_BASE_URL=https://api.yourdomain.com`, then redeploy the frontend.
+
+---
+
+## 6. Verify the live system
+
+Deployment counts as working only after **every** check below passes against the real production URLs.
+
+```bash
+API=https://metaflow-api.onrender.com
+WEB=https://metaflow-web.vercel.app
+
+# 1. Liveness: expect 200 and "environment":"production"
+curl -s "$API/api/health"
+
+# 2. Readiness: expect 200 and "database":{"status":"up",...}
+curl -si "$API/api/health/ready"
+
+# 3. CORS for the frontend origin: expect both headers
+curl -s -D - -o /dev/null -H "Origin: $WEB" "$API/api/health" | grep -i access-control-allow
+
+# 4. CORS for any other origin: expect no access-control headers
+curl -s -D - -o /dev/null -H "Origin: https://example.com" "$API/api/health" | grep -i access-control-allow
+```
+
+5. Open the frontend URL in a browser. The **Backend connection** panel must show **Connected**, with "Responding in … ms" and "MongoDB connected".
+6. In the browser developer tools (Network tab), the requests to `/api/health` and `/api/health/ready` must succeed with no CORS errors in the Console.
+7. In Render → Logs, there must be no `database.connect_failed` entries after startup.
+
+### Troubleshooting
+
+| Symptom                                                      | Likely cause                                                                                                       |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| Panel shows **Unreachable**, console shows a CORS error      | `CORS_ORIGINS` does not exactly match the Vercel URL (scheme, host, no trailing slash)                             |
+| Panel shows **Unreachable**, no CORS error                   | Wrong `NEXT_PUBLIC_API_BASE_URL` (redeploy after fixing), or the Render service is down                            |
+| Panel shows "Still waiting…" for up to a minute              | Free Render instance waking from sleep; expected                                                                   |
+| Panel shows **Degraded** / readiness `down`                  | Atlas unreachable: wrong `MONGODB_URI`, password not URL-encoded, or Render ranges missing in Atlas Network Access |
+| Render deploy fails with "Invalid environment configuration" | The log names the missing or invalid variable                                                                      |
+| Vercel build fails mentioning `NEXT_PUBLIC_API_BASE_URL`     | Variable missing, has a path such as `/api`, or uses `http` in production                                          |
+
+### Rolling back
+
+Both platforms keep previous deployments. Render: service → Events → choose an earlier deploy → **Rollback**. Vercel: Deployments → choose an earlier deployment → **Promote to Production** (or **Instant Rollback**).

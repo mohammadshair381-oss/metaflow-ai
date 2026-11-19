@@ -1,0 +1,29 @@
+{
+  "name": "metaflow-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MetaFlow AI — AI-powered social media automation SaaS (monorepo root)",
+  "packageManager": "pnpm@10.34.9",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @metaflow/backend --filter @metaflow/frontend dev",
+    "dev:backend": "pnpm --filter @metaflow/backend dev",
+    "dev:frontend": "pnpm --filter @metaflow/frontend dev",
+    "build": "pnpm --recursive build",
+    "build:backend": "pnpm --filter @metaflow/backend build",
+    "build:frontend": "pnpm --filter @metaflow/frontend build",
+    "start:backend": "pnpm --filter @metaflow/backend start",
+    "start:frontend": "pnpm --filter @metaflow/frontend start",
+    "typecheck": "pnpm --recursive typecheck",
+    "lint": "pnpm --recursive lint",
+    "test": "pnpm --recursive test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "verify": "pnpm format:check && pnpm typecheck && pnpm lint && pnpm test && pnpm build"
+  },
+  "devDependencies": {
+    "prettier": "3.10.1"
+  }
+}

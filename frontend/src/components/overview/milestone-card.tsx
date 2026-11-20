@@ -6,10 +6,10 @@ const BUILT_IN_THIS_MILESTONE = [
   'API with liveness and readiness checks',
   'MongoDB readiness reporting',
   'Credentialed CORS between web app and API',
+  'Accounts, sign-in and secure sessions',
 ];
 
 const COMING_NEXT = [
-  'Accounts, sign-in and secure sessions',
   'Workspaces, team roles and permissions',
   'Facebook Page and Instagram connections',
   'AI Studio for captions and hashtags',

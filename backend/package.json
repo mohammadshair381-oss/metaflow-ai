@@ -13,12 +13,14 @@
     "start": "node --enable-source-maps dist/server.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:indexes": "tsx scripts/create-indexes.ts"
   },
   "dependencies": {
     "@metaflow/shared": "workspace:*",
     "cors": "2.8.6",
     "express": "5.3.0",
+    "express-rate-limit": "8.7.5",
     "helmet": "8.3.0",
     "mongoose": "8.24.10",
     "zod": "4.6.7"

@@ -4,6 +4,9 @@ import { z } from 'zod';
 export const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
 export type LogLevel = (typeof LOG_LEVELS)[number];
 
+export const COOKIE_SAME_SITE_VALUES = ['lax', 'strict', 'none'] as const;
+export type CookieSameSite = (typeof COOKIE_SAME_SITE_VALUES)[number];
+
 const DEVELOPMENT_CORS_ORIGINS = ['http://localhost:3000'];
 
 /** Treat unset and blank values the same, so `KEY=` in a .env file means "not configured". */
@@ -27,6 +30,17 @@ const rawEnvSchema = z.object({
   TRUST_PROXY: z.coerce.number().int().min(0).max(10).default(0),
   /** Set automatically by Render; used to report which build is running. */
   RENDER_GIT_COMMIT: z.preprocess(blankToUndefined, z.string().optional()),
+  /** Absolute session lifetime. A session is never extended; signing in again starts a new one. */
+  SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(7),
+  /**
+   * SameSite attribute of the session cookie. "lax" works when the web app and API share a site
+   * (localhost, or app./api. subdomains of one domain). "none" is only for a cross-site setup and
+   * needs Secure cookies; see docs/architecture.md, "Cross-site cookies".
+   */
+  SESSION_COOKIE_SAMESITE: z.preprocess(
+    (value) => (typeof value === 'string' ? value.trim().toLowerCase() || undefined : value),
+    z.enum(COOKIE_SAME_SITE_VALUES).default('lax'),
+  ),
 });
 
 export interface Env {
@@ -39,6 +53,8 @@ export interface Env {
   CORS_ORIGINS: string[];
   TRUST_PROXY: number;
   GIT_COMMIT: string | null;
+  SESSION_TTL_DAYS: number;
+  SESSION_COOKIE_SAMESITE: CookieSameSite;
 }
 
 export class EnvValidationError extends Error {
@@ -124,6 +140,12 @@ export function parseEnv(source: NodeJS.ProcessEnv): Env {
     });
   }
 
+  if (raw.SESSION_COOKIE_SAMESITE === 'none' && !isProduction) {
+    issues.push(
+      'SESSION_COOKIE_SAMESITE: "none" needs Secure cookies, which are only enabled in production',
+    );
+  }
+
   if (issues.length > 0) {
     throw new EnvValidationError(issues);
   }
@@ -136,5 +158,7 @@ export function parseEnv(source: NodeJS.ProcessEnv): Env {
     CORS_ORIGINS: [...new Set(corsOrigins)],
     TRUST_PROXY: raw.TRUST_PROXY,
     GIT_COMMIT: raw.RENDER_GIT_COMMIT ? raw.RENDER_GIT_COMMIT.slice(0, 7) : null,
+    SESSION_TTL_DAYS: raw.SESSION_TTL_DAYS,
+    SESSION_COOKIE_SAMESITE: raw.SESSION_COOKIE_SAMESITE,
   };
 }

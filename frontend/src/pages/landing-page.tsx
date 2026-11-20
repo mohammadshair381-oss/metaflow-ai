@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Brand } from '@/components/layout/brand';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/contexts/auth-context';
 import { useDocumentTitle } from '@/hooks/use-document-title';
 
 const CAPABILITIES: { icon: LucideIcon; title: string; description: string }[] = [
@@ -28,6 +29,8 @@ const CAPABILITIES: { icon: LucideIcon; title: string; description: string }[] =
 
 export function LandingPage() {
   useDocumentTitle();
+  const { state } = useAuth();
+  const signedIn = state.status === 'authenticated';
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -35,37 +38,56 @@ export function LandingPage() {
         <div className="mx-auto flex h-16 w-full max-w-6xl items-center gap-3 px-4 sm:px-6">
           <Brand />
           <nav className="ml-auto flex items-center gap-2" aria-label="Account">
-            <Button asChild variant="ghost" size="sm">
-              <Link to="/login">Sign in</Link>
-            </Button>
-            <Button asChild size="sm">
-              <Link to="/dashboard">Open dashboard</Link>
-            </Button>
+            {signedIn ? (
+              <Button asChild size="sm">
+                <Link to="/dashboard">Go to dashboard</Link>
+              </Button>
+            ) : (
+              <>
+                <Button asChild variant="ghost" size="sm">
+                  <Link to="/login">Sign in</Link>
+                </Button>
+                <Button asChild size="sm">
+                  <Link to="/register">Create account</Link>
+                </Button>
+              </>
+            )}
           </nav>
         </div>
       </header>
 
       <main className="flex-1">
         <section className="mx-auto flex w-full max-w-6xl flex-col items-start gap-6 px-4 py-16 sm:px-6 sm:py-24">
-          <Badge variant="outline">In development · Milestone 1</Badge>
+          <Badge variant="outline">In development · Milestone 2</Badge>
           <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
             Social media for Facebook and Instagram, run by AI and approved by you.
           </h1>
           <p className="text-muted-foreground max-w-2xl text-base sm:text-lg">
             MetaFlow AI is being built for businesses, creators and agencies that manage several
-            brands. This early release contains the platform foundation; the features below arrive
-            over the coming milestones.
+            brands. This early release includes secure accounts and the platform foundation; the
+            features below arrive over the coming milestones.
           </p>
           <div className="flex flex-wrap gap-3">
-            <Button asChild size="lg">
-              <Link to="/dashboard">
-                Open dashboard preview
-                <ArrowRight aria-hidden />
-              </Link>
-            </Button>
-            <Button asChild size="lg" variant="outline">
-              <Link to="/register">Create account</Link>
-            </Button>
+            {signedIn ? (
+              <Button asChild size="lg">
+                <Link to="/dashboard">
+                  Go to dashboard
+                  <ArrowRight aria-hidden />
+                </Link>
+              </Button>
+            ) : (
+              <>
+                <Button asChild size="lg">
+                  <Link to="/register">
+                    Create account
+                    <ArrowRight aria-hidden />
+                  </Link>
+                </Button>
+                <Button asChild size="lg" variant="outline">
+                  <Link to="/login">Sign in</Link>
+                </Button>
+              </>
+            )}
           </div>
         </section>
 

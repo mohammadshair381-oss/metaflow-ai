@@ -19,9 +19,37 @@ function isBodyParserError(error: unknown): error is BodyParserError {
   );
 }
 
+const DATABASE_UNAVAILABLE_ERRORS = new Set([
+  'MongooseServerSelectionError',
+  'MongoServerSelectionError',
+  'MongoNetworkError',
+  'MongoNetworkTimeoutError',
+  'MongoNotConnectedError',
+]);
+
+/**
+ * True when MongoDB is unreachable rather than the request being wrong. With bufferCommands
+ * off, Mongoose fails fast with a MongooseError naming the missing initial connection.
+ */
+function isDatabaseUnavailable(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (DATABASE_UNAVAILABLE_ERRORS.has(error.name)) return true;
+  return error.name === 'MongooseError' && /initial connection|bufferCommands/i.test(error.message);
+}
+
 /** Map anything thrown in the app to a client-safe AppError. */
 export function toAppError(error: unknown): AppError {
   if (error instanceof AppError) return error;
+
+  if (isDatabaseUnavailable(error)) {
+    return new AppError(
+      'SERVICE_UNAVAILABLE',
+      'The service is temporarily unavailable. Try again shortly.',
+      {
+        cause: error,
+      },
+    );
+  }
 
   if (error instanceof ZodError) {
     return AppError.validation(toValidationIssues(error));

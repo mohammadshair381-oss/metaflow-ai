@@ -98,3 +98,31 @@ describe('parseEnv', () => {
     expect(error.message).not.toContain('s3cret');
   });
 });
+
+describe('session settings', () => {
+  it('defaults to 7-day sessions with SameSite=Lax cookies', () => {
+    expect(parseEnv({})).toMatchObject({ SESSION_TTL_DAYS: 7, SESSION_COOKIE_SAMESITE: 'lax' });
+  });
+
+  it.each([['0'], ['91'], ['1.5'], ['abc']])('rejects SESSION_TTL_DAYS=%j', (value) => {
+    expect(expectEnvError({ SESSION_TTL_DAYS: value }).issues[0]).toMatch(/^SESSION_TTL_DAYS:/);
+  });
+
+  it('accepts SameSite=None in production (case-insensitive)', () => {
+    expect(
+      parseEnv({ ...validProduction, SESSION_COOKIE_SAMESITE: 'None' }).SESSION_COOKIE_SAMESITE,
+    ).toBe('none');
+  });
+
+  it('refuses SameSite=None outside production, where cookies are not Secure', () => {
+    expect(expectEnvError({ SESSION_COOKIE_SAMESITE: 'none' }).issues[0]).toMatch(
+      /^SESSION_COOKIE_SAMESITE:/,
+    );
+  });
+
+  it('rejects an unknown SameSite value', () => {
+    expect(expectEnvError({ SESSION_COOKIE_SAMESITE: 'sometimes' }).issues[0]).toMatch(
+      /^SESSION_COOKIE_SAMESITE:/,
+    );
+  });
+});

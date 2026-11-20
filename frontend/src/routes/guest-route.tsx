@@ -1,17 +1,20 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
+import { FullPageSpinner } from '@/components/common/full-page-spinner';
 import { useAuth } from '@/contexts/auth-context';
-import type { RedirectState } from './protected-route';
+import { safeRedirectTarget, type RedirectState } from './redirect';
 
-/** Wraps /login and /register: signed-in users are sent on to where they were going. */
+/**
+ * Wraps /login and /register. Signed-in users are sent on to where they were going, which is
+ * also what happens right after a successful sign-in or registration.
+ */
 export function GuestRoute() {
-  const auth = useAuth();
+  const { state } = useAuth();
   const location = useLocation();
 
-  if (auth.status === 'authenticated') {
+  if (state.status === 'loading') return <FullPageSpinner label="Loading…" />;
+  if (state.status === 'authenticated') {
     const from = (location.state as RedirectState | null)?.from;
-    // Only follow in-app paths, never an absolute URL.
-    const target = from?.startsWith('/') && !from.startsWith('//') ? from : '/dashboard';
-    return <Navigate to={target} replace />;
+    return <Navigate to={safeRedirectTarget(from)} replace />;
   }
   return <Outlet />;
 }

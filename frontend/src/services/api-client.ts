@@ -1,4 +1,4 @@
-import { REQUEST_ID_HEADER, apiErrorResponseSchema } from '@metaflow/shared';
+import { REQUEST_ID_HEADER, apiErrorResponseSchema, type ValidationIssue } from '@metaflow/shared';
 import type { z } from 'zod';
 import { API_BASE_URL } from '@/lib/config';
 
@@ -9,18 +9,27 @@ export class ApiRequestError extends Error {
   readonly kind: ApiErrorKind;
   readonly status: number | undefined;
   readonly code: string | undefined;
+  /** Field-level problems reported by the API (VALIDATION_ERROR), e.g. path "body.email". */
+  readonly details: ValidationIssue[];
   readonly requestId: string | null;
 
   constructor(
     kind: ApiErrorKind,
     message: string,
-    details: { status?: number; code?: string; requestId?: string | null; cause?: unknown } = {},
+    details: {
+      status?: number;
+      code?: string;
+      details?: ValidationIssue[];
+      requestId?: string | null;
+      cause?: unknown;
+    } = {},
   ) {
     super(message, { cause: details.cause });
     this.name = 'ApiRequestError';
     this.kind = kind;
     this.status = details.status;
     this.code = details.code;
+    this.details = details.details ?? [];
     this.requestId = details.requestId ?? null;
   }
 }
@@ -125,6 +134,7 @@ export async function apiRequest<T>(
       {
         status: response.status,
         code: apiError.success ? apiError.data.error.code : undefined,
+        details: apiError.success ? (apiError.data.error.details ?? []) : [],
         requestId,
       },
     );

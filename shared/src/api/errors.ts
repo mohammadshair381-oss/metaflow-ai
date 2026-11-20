@@ -7,9 +7,19 @@ import { z } from 'zod';
 export const ERROR_CODES = [
   'BAD_REQUEST',
   'VALIDATION_ERROR',
+  /** No valid session: not signed in, expired, or revoked. */
+  'UNAUTHENTICATED',
+  /** Wrong email or password. Deliberately does not say which. */
+  'INVALID_CREDENTIALS',
+  /** State-changing request from an origin that is not allowed. */
+  'FORBIDDEN',
   'NOT_FOUND',
+  'EMAIL_TAKEN',
   'PAYLOAD_TOO_LARGE',
+  'RATE_LIMITED',
   'INTERNAL_ERROR',
+  /** A dependency (the database) is temporarily unreachable. */
+  'SERVICE_UNAVAILABLE',
 ] as const;
 
 export const errorCodeSchema = z.enum(ERROR_CODES);

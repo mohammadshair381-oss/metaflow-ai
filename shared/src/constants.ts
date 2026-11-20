@@ -10,6 +10,11 @@ export const API_PREFIX = '/api';
 export const API_ROUTES = {
   health: `${API_PREFIX}/health`,
   healthReady: `${API_PREFIX}/health/ready`,
+  authRegister: `${API_PREFIX}/auth/register`,
+  authLogin: `${API_PREFIX}/auth/login`,
+  authLogout: `${API_PREFIX}/auth/logout`,
+  authLogoutAll: `${API_PREFIX}/auth/logout-all`,
+  authMe: `${API_PREFIX}/auth/me`,
 } as const;
 
 /** Header used to correlate a request across frontend, backend and logs. */

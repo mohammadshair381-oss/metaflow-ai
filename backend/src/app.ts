@@ -6,12 +6,19 @@ import { APP_VERSION } from './config/app-info';
 import { createCorsOptions } from './config/cors';
 import type { DatabaseHealthProbe } from './config/database';
 import type { Env } from './config/env';
+import { createSessionCookieConfig } from './config/session-cookie';
+import { createAuthController } from './controllers/auth.controller';
 import { createHealthController } from './controllers/health.controller';
+import { createRequireAuth } from './middleware/authenticate';
 import { createErrorHandler } from './middleware/error-handler';
 import { notFoundHandler } from './middleware/not-found';
+import { createAuthRateLimiters, type AuthRateLimits } from './middleware/rate-limit';
 import { requestId } from './middleware/request-id';
 import { requestLogger } from './middleware/request-logger';
+import { requireTrustedOrigin } from './middleware/trusted-origin';
+import type { AuthRepositories } from './repositories/auth-repositories';
 import { createApiRouter } from './routes';
+import { createAuthService } from './services/auth.service';
 import { createHealthService } from './services/health.service';
 import type { Logger } from './utils/logger';
 
@@ -19,6 +26,11 @@ export interface AppDependencies {
   env: Env;
   database: DatabaseHealthProbe;
   logger: Logger;
+  /** MongoDB-backed in the server; in-memory in tests. */
+  authRepositories: AuthRepositories;
+  /** Override only in tests; production uses DEFAULT_AUTH_RATE_LIMITS. */
+  authRateLimits?: AuthRateLimits;
+  now?: () => Date;
 }
 
 /** JSON bodies above this size are rejected with 413. Raise per-route when uploads arrive. */
@@ -28,7 +40,14 @@ const JSON_BODY_LIMIT = '100kb';
  * Build the Express application. Has no side effects (no listening, no DB connection),
  * so tests can create isolated instances with fake dependencies.
  */
-export function createApp({ env, database, logger }: AppDependencies): Express {
+export function createApp({
+  env,
+  database,
+  logger,
+  authRepositories,
+  authRateLimits,
+  now,
+}: AppDependencies): Express {
   const app = express();
 
   app.disable('x-powered-by');
@@ -38,6 +57,7 @@ export function createApp({ env, database, logger }: AppDependencies): Express {
   app.use(requestLogger(logger));
   app.use(helmet());
   app.use(cors(createCorsOptions(env.CORS_ORIGINS)));
+  app.use(requireTrustedOrigin(env.CORS_ORIGINS));
   app.use(express.json({ limit: JSON_BODY_LIMIT }));
 
   const healthService = createHealthService({
@@ -47,7 +67,24 @@ export function createApp({ env, database, logger }: AppDependencies): Express {
     database,
   });
 
-  app.use(API_PREFIX, createApiRouter({ health: createHealthController(healthService) }));
+  const sessionCookie = createSessionCookieConfig(env);
+  const authService = createAuthService({
+    repositories: authRepositories,
+    sessionTtlMs: sessionCookie.ttlMs,
+    now,
+  });
+
+  app.use(
+    API_PREFIX,
+    createApiRouter({
+      health: createHealthController(healthService),
+      auth: {
+        controller: createAuthController(authService, sessionCookie),
+        requireAuth: createRequireAuth(authService, sessionCookie),
+        limiters: createAuthRateLimiters(authRateLimits),
+      },
+    }),
+  );
 
   app.use(notFoundHandler);
   app.use(createErrorHandler(logger));

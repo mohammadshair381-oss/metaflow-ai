@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import { createApp } from './app';
 import { createDatabase } from './config/database';
 import { EnvValidationError, parseEnv, type Env } from './config/env';
+import { createMongoAuthRepositories } from './repositories/mongo-auth-repositories';
 import { createLogger } from './utils/logger';
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
@@ -38,7 +39,12 @@ function main(): void {
     autoIndex: env.NODE_ENV !== 'production',
   });
 
-  const app = createApp({ env, database, logger });
+  const app = createApp({
+    env,
+    database,
+    logger,
+    authRepositories: createMongoAuthRepositories(),
+  });
   const server = createServer(app);
   const shutdownController = new AbortController();
 

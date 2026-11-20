@@ -3,9 +3,15 @@ import type { ErrorCode, ValidationIssue } from '@metaflow/shared';
 const STATUS_BY_CODE: Record<ErrorCode, number> = {
   BAD_REQUEST: 400,
   VALIDATION_ERROR: 400,
+  UNAUTHENTICATED: 401,
+  INVALID_CREDENTIALS: 401,
+  FORBIDDEN: 403,
   NOT_FOUND: 404,
+  EMAIL_TAKEN: 409,
   PAYLOAD_TOO_LARGE: 413,
+  RATE_LIMITED: 429,
   INTERNAL_ERROR: 500,
+  SERVICE_UNAVAILABLE: 503,
 };
 
 /**

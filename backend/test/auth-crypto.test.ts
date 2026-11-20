@@ -1,7 +1,7 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes, scryptSync } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { readCookie } from '../src/utils/cookies';
-import { hashPassword, verifyPassword } from '../src/utils/password';
+import { DEFAULT_SCRYPT_PARAMS, hashPassword, verifyPassword } from '../src/utils/password';
 import {
   generateSessionToken,
   hashSessionToken,
@@ -11,10 +11,37 @@ import {
 describe('password hashing (scrypt)', () => {
   const password = 'correct horse battery staple';
 
+  it('defaults to the OWASP scrypt setting N=2^15 (32 MiB), r=8, p=3', () => {
+    expect(DEFAULT_SCRYPT_PARAMS).toMatchObject({ N: 2 ** 15, r: 8, p: 3 });
+  });
+
   it('produces a self-describing scrypt hash that does not contain the password', async () => {
     const hash = await hashPassword(password);
-    expect(hash).toMatch(/^scrypt\$32768\$8\$1\$[A-Za-z0-9_-]{22}\$[A-Za-z0-9_-]{86}$/);
+    expect(hash).toMatch(/^scrypt\$32768\$8\$3\$[A-Za-z0-9_-]{22}\$[A-Za-z0-9_-]{86}$/);
     expect(hash).not.toContain(password);
+  });
+
+  it('still verifies hashes stored with the earlier p=1 setting, using their own parameters', async () => {
+    // Built independently of hashPassword(), exactly as the earlier default stored it.
+    const N = 2 ** 15;
+    const salt = randomBytes(16);
+    const key = scryptSync(password.normalize('NFKC'), salt, 64, {
+      N,
+      r: 8,
+      p: 1,
+      maxmem: 256 * N * 8,
+    });
+    const legacy = `scrypt$${N}$8$1$${salt.toString('base64url')}$${key.toString('base64url')}`;
+
+    expect(await verifyPassword(password, legacy)).toBe(true);
+    expect(await verifyPassword('correct horse battery stapler', legacy)).toBe(false);
+  });
+
+  it('rejects a hash whose recorded parameters were changed', async () => {
+    const hash = await hashPassword(password);
+    expect(
+      await verifyPassword(password, hash.replace(/^scrypt\$32768\$8\$3\$/, 'scrypt$32768$8$1$')),
+    ).toBe(false);
   });
 
   it('uses a fresh random salt for every hash', async () => {

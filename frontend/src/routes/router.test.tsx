@@ -175,11 +175,14 @@ describe('guest routes', () => {
     expect(router.state.location.pathname).toBe('/calendar');
   });
 
-  it('never follow a redirect target outside the app', async () => {
-    const router = renderAt({ pathname: '/login', state: { from: '//evil.example' } }, SIGNED_IN);
-    await screen.findByRole('heading', { level: 1, name: 'Dashboard' });
-    expect(router.state.location.pathname).toBe('/dashboard');
-  });
+  it.each(['//evil.example', '/\\evil.example', 'https://evil.example'])(
+    'never follow a redirect target outside the app (%j)',
+    async (from) => {
+      const router = renderAt({ pathname: '/login', state: { from } }, SIGNED_IN);
+      await screen.findByRole('heading', { level: 1, name: 'Dashboard' });
+      expect(router.state.location.pathname).toBe('/dashboard');
+    },
+  );
 
   it('show the form with a server warning when the session check failed', async () => {
     renderAt('/login', {

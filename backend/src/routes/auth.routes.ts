@@ -22,7 +22,14 @@ export function createAuthRouter({
   const router = Router();
   router.use(noStore);
   router.post('/register', limiters.perIp, controller.register);
-  router.post('/login', limiters.perIp, limiters.failedLoginsPerAccount, controller.login);
+  // Order matters: see createAuthRateLimiters().
+  router.post(
+    '/login',
+    limiters.perIp,
+    limiters.failedLoginsPerAccountAndIp,
+    limiters.failedLoginsPerAccount,
+    controller.login,
+  );
   router.post('/logout', controller.logout);
   router.post('/logout-all', requireAuth, controller.logoutAll);
   router.get('/me', requireAuth, controller.me);

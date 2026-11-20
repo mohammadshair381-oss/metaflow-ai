@@ -223,7 +223,7 @@ Server-managed sessions in HTTP-only cookies. No JWTs, and nothing in `localStor
 
 **Passwords**
 
-- Node.js `scrypt` with N=2^15, r=8, p=1 (32 MiB per hash), a 16-byte random salt and a 64-byte key. Stored as `scrypt$N$r$p$salt$key`, so the parameters can be raised later.
+- Node.js `scrypt` with N=2^15, r=8, p=3 (32 MiB per hash), one of the equivalent minimum settings in the OWASP Password Storage Cheat Sheet, with a 16-byte random salt and a 64-byte key. Stored as `scrypt$N$r$p$salt$key`, and each hash is verified with the parameters it records, so the settings can be raised later and hashes made earlier (p=1 during development) keep working.
 - NFKC Unicode normalization; comparison with `timingSafeEqual`. Malformed or out-of-bounds stored hashes are rejected without throwing.
 - Policy (shared by API and forms): 10–128 characters, not a known common password, at least 3 distinct characters. Length plus a blocklist, as in NIST SP 800-63B; no composition rules.
 
@@ -240,7 +240,7 @@ Server-managed sessions in HTTP-only cookies. No JWTs, and nothing in `localStor
 **Defences**
 
 - **Account enumeration:** login answers "Incorrect email or password" for both unknown emails and wrong passwords, and an unknown email still runs a full scrypt check against a decoy hash, so timing matches. Suspended accounts get the same answer. Registration does reveal a taken email (409); there is no email system yet that could notify the owner instead. The rate limits bound how fast this can be probed.
-- **Brute force:** per client IP, 30 register/login requests per 15 minutes. Per account, 10 **failed** logins per 15 minutes (successful ones don't count). Both answer 429 `RATE_LIMITED`. The counters are in memory: correct for one backend instance; several instances will need a shared store (Redis).
+- **Brute force:** per client IP, 30 register/login requests per 15 minutes. Per account from one IP, 10 **failed** logins per 15 minutes; per account from all IPs together, 50 failed logins per 15 minutes (successful logins count toward neither). A request already refused for its IP does not count toward the account-wide limit, so one IP cannot lock an account out, and locking it out takes failures from at least 5 IPs. Unknown emails are limited exactly like existing accounts (no database lookup). All limits answer 429 `RATE_LIMITED`. The counters are in memory: correct for one backend instance; several instances will need a shared store (Redis).
 - **CSRF:** `SameSite` cookies plus the `Origin` check on every state-changing request.
 - **Trust:** identity comes only from the server-side session (`res.locals.auth`). IDs in request bodies or headers are never used for authorization (tested: `logout-all` ignores a `userId` in the body).
 

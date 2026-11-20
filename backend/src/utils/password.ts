@@ -9,11 +9,16 @@ export interface ScryptParams {
   saltLength: number;
 }
 
-/** 2^15 * 8 * 128 = 32 MiB per hash: well above OWASP's scrypt minimum, light enough for a small server. */
+/**
+ * OWASP Password Storage Cheat Sheet (scrypt): N=2^15 (32 MiB), r=8, p=3 is one of its
+ * equivalent minimum settings. Of those it keeps memory per hash low (128 * N * r = 32 MiB,
+ * independent of p) at the cost of more CPU time. Hashes record their own parameters, so
+ * hashes created with earlier settings keep verifying with the settings they were made with.
+ */
 export const DEFAULT_SCRYPT_PARAMS: ScryptParams = {
   N: 2 ** 15,
   r: 8,
-  p: 1,
+  p: 3,
   keyLength: 64,
   saltLength: 16,
 };

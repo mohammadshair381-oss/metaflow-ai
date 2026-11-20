@@ -20,6 +20,14 @@ export interface WorkspaceContextValue {
   createWorkspace: (input: CreateWorkspaceRequest) => Promise<Workspace>;
   updateWorkspace: (workspaceId: string, changes: UpdateWorkspaceRequest) => Promise<Workspace>;
   archiveWorkspace: (workspaceId: string, confirmName: string) => Promise<void>;
+  /**
+   * Applies fields another endpoint already saved on the server (e.g. the brand voice saves
+   * the description and language), so every page shows them without reloading. No request.
+   */
+  syncWorkspace: (
+    workspaceId: string,
+    changes: Partial<Pick<Workspace, 'description' | 'defaultLanguage'>>,
+  ) => void;
   retry: () => void;
 }
 

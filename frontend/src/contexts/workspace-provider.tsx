@@ -106,6 +106,22 @@ export function WorkspaceProvider({ userId, children }: { userId: string; childr
     [userId],
   );
 
+  const syncWorkspace = useCallback<WorkspaceContextValue['syncWorkspace']>(
+    (workspaceId, changes) => {
+      setLoaded((current) =>
+        current
+          ? {
+              ...current,
+              workspaces: current.workspaces.map((w) =>
+                w.id === workspaceId ? { ...w, ...changes } : w,
+              ),
+            }
+          : current,
+      );
+    },
+    [],
+  );
+
   const retry = useCallback(() => {
     setError(null);
     setLoaded(null);
@@ -122,8 +138,24 @@ export function WorkspaceProvider({ userId, children }: { userId: string; childr
   }, [error, loaded]);
 
   const value = useMemo<WorkspaceContextValue>(
-    () => ({ state, switchWorkspace, createWorkspace, updateWorkspace, archiveWorkspace, retry }),
-    [state, switchWorkspace, createWorkspace, updateWorkspace, archiveWorkspace, retry],
+    () => ({
+      state,
+      switchWorkspace,
+      createWorkspace,
+      updateWorkspace,
+      archiveWorkspace,
+      syncWorkspace,
+      retry,
+    }),
+    [
+      state,
+      switchWorkspace,
+      createWorkspace,
+      updateWorkspace,
+      archiveWorkspace,
+      syncWorkspace,
+      retry,
+    ],
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

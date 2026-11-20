@@ -28,13 +28,14 @@ export async function signInAs(app: Express, auth: InMemoryAuthRepositories, nam
     expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
   });
   const cookie = `metaflow_session=${token}`;
-  const write = (method: 'post' | 'patch' | 'delete') => (path: string, body?: object) =>
+  const write = (method: 'post' | 'put' | 'patch' | 'delete') => (path: string, body?: object) =>
     request(app)[method](path).set('Cookie', cookie).set('Origin', FRONTEND_ORIGIN).send(body);
   return {
     user,
     cookie,
     get: (path: string) => request(app).get(path).set('Cookie', cookie),
     post: write('post'),
+    put: write('put'),
     patch: write('patch'),
     delete: write('delete'),
   };

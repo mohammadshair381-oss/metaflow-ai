@@ -6,7 +6,7 @@ Guidance for AI agents and contributors working in this repository. Read this fi
 
 **MetaFlow AI**: a multi-tenant SaaS for AI-assisted social media management. Users connect Facebook Pages and Instagram Professional (Business/Creator) accounts, generate content with AI, and publish it with manual approval or automatically.
 
-**Current milestone: 4 — social accounts (Meta).** Built: health checks, the dashboard shell, registration/login/logout with server-managed sessions, workspaces with owner/staff roles, and the Facebook Page / Instagram connection (OAuth, encrypted tokens, list, check, disconnect). The Meta integration is tested against simulated Meta responses only; it has not run against the real platform (see `docs/meta-setup.md`). The owner approved a 10-day MVP plan (workspaces → Meta connection → AI Studio → content → calendar and scheduling → publishing → automation → analytics and team → billing and super-admin). Production deployment stays postponed until the owner approves launch.
+**Current milestone: 5 — AI Studio.** Built: health checks, the dashboard shell, registration/login/logout with server-managed sessions, workspaces with owner/staff roles, the Facebook Page / Instagram connection, and AI Studio (captions, hashtags, content ideas, brand voice, history, usage records) with drafts saved as the first part of the Post model. The Meta and AI integrations are tested against simulated responses only; neither has run against the real service (see `docs/meta-setup.md`, `docs/ai-setup.md`).
 
 ## Ground rules
 
@@ -21,7 +21,7 @@ Guidance for AI agents and contributors working in this repository. Read this fi
 ## Hard restrictions
 
 - **Database:** MongoDB with Mongoose 8 only. Never introduce Prisma, MySQL or PostgreSQL.
-- **Not yet:** do not build AI generation, publishing or advanced automation until their milestone is approved.
+- **Not yet:** do not build publishing, scheduling or advanced automation until their milestone is approved.
 - **Separate project:** `D:\Projects\SiteForge` is unrelated. Never modify it or merge code from it.
 - **Dependencies:** add a package only when it is clearly needed, pin exact versions, and prefer what is already installed.
 - **Git:** never commit `.env` files or credentials. Never push or deploy without the owner's instruction.
@@ -49,6 +49,7 @@ Guidance for AI agents and contributors working in this repository. Read this fi
 - **Tests and data:** never point tests at the application database. Auth tests use in-memory repositories; MongoDB suites run only with `MONGODB_TEST_URI` and refuse database names without `test`.
 - **Tenant isolation:** every workspace-scoped operation starts with `workspaceService.requireAccess(userId, workspaceId, { role? })`, which answers `NOT_FOUND` to non-members and `PERMISSION_DENIED` to members without the role. Every query on workspace-owned data must be scoped by the workspace ID it returns. A workspace ID sent by the client is only a lookup key, never proof of access. Enforce roles in services, not only in routes or the UI.
 - **External platforms:** all calls to Meta go through `integrations/meta/meta-client.ts`. Verify endpoints, fields and permissions against Meta's current documentation before changing them; never guess. Tests use a fake `MetaClient` or a mocked `fetch`, never the network.
+- **AI providers:** every model call goes through `integrations/ai/` (one adapter per provider) and `ai-model-resolver.ts`, which picks the provider and model from server configuration. Never let a request choose a provider, model or prompt (request schemas are strict). Validate every reply in `services/ai-output.ts` before use. Usage records keep unknown token counts and costs as null, never 0. Never store or log prompts, replies or keys. Check the provider's current documentation before changing a request shape; for Claude, use the official SDK.
 - **Stored secrets:** social access tokens are encrypted with `utils/secret-box.ts` before they reach a repository, bound to their record with a context string. Never store, log or return one in plaintext, and never add a token field to an API response.
 - **Async:** Express 5 forwards rejected promises to the error handler; do not add wrappers. `no-floating-promises` is an error.
 

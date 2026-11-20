@@ -1,5 +1,8 @@
 import {
+  BRAND_VOICE_LIMITS,
   BUSINESS_CATEGORIES,
+  CONTENT_TONES,
+  EMOJI_PREFERENCES,
   DEFAULT_WORKSPACE_LANGUAGE,
   DEFAULT_WORKSPACE_TIMEZONE,
   WORKSPACE_DESCRIPTION_MAX_LENGTH,
@@ -10,6 +13,59 @@ import {
   isValidTimeZone,
 } from '@metaflow/shared';
 import mongoose, { Schema, type InferSchemaType, type Model } from 'mongoose';
+
+const phraseList = {
+  type: [{ type: String, trim: true, maxlength: BRAND_VOICE_LIMITS.phraseLength }],
+  default: [],
+  validate: {
+    validator: (phrases: string[]) => phrases.length <= BRAND_VOICE_LIMITS.phrases,
+    message: `At most ${BRAND_VOICE_LIMITS.phrases} entries`,
+  },
+};
+
+/**
+ * How the workspace's content should sound. Embedded in the workspace (one per workspace,
+ * read together with it). "About the business" and the content language are the workspace's
+ * own `description` and `defaultLanguage`, not duplicated here.
+ */
+const brandVoiceSchema = new Schema(
+  {
+    targetAudience: {
+      type: String,
+      trim: true,
+      default: '',
+      maxlength: BRAND_VOICE_LIMITS.targetAudience,
+    },
+    tone: { type: String, enum: CONTENT_TONES.map((tone) => tone.value), required: true },
+    personality: {
+      type: String,
+      trim: true,
+      default: '',
+      maxlength: BRAND_VOICE_LIMITS.personality,
+    },
+    writingStyle: {
+      type: String,
+      trim: true,
+      default: '',
+      maxlength: BRAND_VOICE_LIMITS.writingStyle,
+    },
+    wordsToUse: phraseList,
+    wordsToAvoid: phraseList,
+    emojiPreference: {
+      type: String,
+      enum: EMOJI_PREFERENCES.map((option) => option.value),
+      required: true,
+    },
+    additionalInstructions: {
+      type: String,
+      trim: true,
+      default: '',
+      maxlength: BRAND_VOICE_LIMITS.additionalInstructions,
+    },
+    updatedAt: { type: Date, required: true },
+  },
+  { _id: false },
+);
 
 const workspaceSchema = new Schema(
   {
@@ -44,6 +100,8 @@ const workspaceSchema = new Schema(
     archivedAt: { type: Date, default: null },
     /** Who created it (audit only). Access is decided by memberships, never by this field. */
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    /** Null until the brand voice is saved for the first time. */
+    brandVoice: { type: brandVoiceSchema, default: null },
   },
   { collection: 'workspaces', timestamps: true },
 );

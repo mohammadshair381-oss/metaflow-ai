@@ -1,4 +1,9 @@
-import { APP_ENVIRONMENTS, META_OAUTH_CALLBACK_PATH } from '@metaflow/shared';
+import {
+  AI_PROVIDERS,
+  APP_ENVIRONMENTS,
+  META_OAUTH_CALLBACK_PATH,
+  type AiProviderId,
+} from '@metaflow/shared';
 import { z } from 'zod';
 
 export const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
@@ -19,6 +24,21 @@ export interface SocialConfig {
   metaGraphApiVersion: string;
   /** 32-byte keys. The first encrypts; all of them decrypt (key rotation). */
   tokenEncryptionKeys: Buffer[];
+}
+
+/** Prices in US dollars per million tokens, used only to estimate costs. */
+export interface AiPricing {
+  inputPerMillionTokensUsd: number;
+  outputPerMillionTokensUsd: number;
+}
+
+/** The AI provider and model the server uses. Secret: holds the provider's API key. */
+export interface AiConfig {
+  provider: AiProviderId;
+  model: string;
+  apiKey: string;
+  /** Null unless both prices are configured: costs are then not estimated. */
+  pricing: AiPricing | null;
 }
 
 const DEVELOPMENT_CORS_ORIGINS = ['http://localhost:3000'];
@@ -71,6 +91,24 @@ const rawEnvSchema = z.object({
       .regex(/^v\d{1,3}\.\d{1,2}$/, 'must look like v27.0')
       .default(DEFAULT_META_GRAPH_API_VERSION),
   ),
+  /**
+   * AI generation. Optional as a group: with none of AI_PROVIDER, AI_MODEL and AI_API_KEY set,
+   * the API starts and reports AI generation as not configured. With only some set, it fails.
+   */
+  AI_PROVIDER: z.preprocess(
+    (value) => (typeof value === 'string' ? value.trim().toLowerCase() || undefined : value),
+    z.enum(AI_PROVIDERS).optional(),
+  ),
+  AI_MODEL: z.preprocess(blankToUndefined, z.string().trim().optional()),
+  AI_API_KEY: z.preprocess(blankToUndefined, z.string().trim().optional()),
+  AI_PRICE_INPUT_PER_MTOK_USD: z.preprocess(
+    blankToUndefined,
+    z.coerce.number().min(0).max(10_000).optional(),
+  ),
+  AI_PRICE_OUTPUT_PER_MTOK_USD: z.preprocess(
+    blankToUndefined,
+    z.coerce.number().min(0).max(10_000).optional(),
+  ),
 });
 
 export interface Env {
@@ -87,6 +125,8 @@ export interface Env {
   SESSION_COOKIE_SAMESITE: CookieSameSite;
   /** Null until the Meta app and token encryption keys are configured. */
   SOCIAL: SocialConfig | null;
+  /** Null until an AI provider, model and API key are configured. */
+  AI: AiConfig | null;
 }
 
 export class EnvValidationError extends Error {
@@ -188,6 +228,58 @@ function parseSocialConfig(
   };
 }
 
+/** A model ID such as claude-opus-5-5: letters, digits and . _ : / @ - only. */
+const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,99}$/;
+
+/** All-or-nothing, like the social configuration. Messages never include a value. */
+function parseAiConfig(raw: z.infer<typeof rawEnvSchema>, issues: string[]): AiConfig | null {
+  const required = {
+    AI_PROVIDER: raw.AI_PROVIDER,
+    AI_MODEL: raw.AI_MODEL,
+    AI_API_KEY: raw.AI_API_KEY,
+  };
+  const missing = Object.entries(required).filter(([, value]) => value === undefined);
+  const pricingSet = [raw.AI_PRICE_INPUT_PER_MTOK_USD, raw.AI_PRICE_OUTPUT_PER_MTOK_USD].filter(
+    (value) => value !== undefined,
+  ).length;
+  if (missing.length === Object.keys(required).length) {
+    if (pricingSet > 0)
+      issues.push('AI_PRICE_*: pricing is set but AI generation is not configured');
+    return null;
+  }
+  for (const [name] of missing) {
+    issues.push(`${name}: is required when AI generation is configured`);
+  }
+  const before = issues.length;
+
+  if (required.AI_MODEL !== undefined && !MODEL_ID.test(required.AI_MODEL)) {
+    issues.push("AI_MODEL: must be the provider's model ID, for example claude-opus-5-5");
+  }
+  if (required.AI_API_KEY !== undefined && /\s/.test(required.AI_API_KEY)) {
+    issues.push('AI_API_KEY: must not contain spaces or line breaks');
+  }
+  if (pricingSet === 1) {
+    issues.push(
+      'AI_PRICE_INPUT_PER_MTOK_USD, AI_PRICE_OUTPUT_PER_MTOK_USD: set both prices, or neither',
+    );
+  }
+
+  if (missing.length > 0 || issues.length > before) return null;
+  return {
+    provider: required.AI_PROVIDER as AiProviderId,
+    model: required.AI_MODEL as string,
+    apiKey: required.AI_API_KEY as string,
+    pricing:
+      raw.AI_PRICE_INPUT_PER_MTOK_USD !== undefined &&
+      raw.AI_PRICE_OUTPUT_PER_MTOK_USD !== undefined
+        ? {
+            inputPerMillionTokensUsd: raw.AI_PRICE_INPUT_PER_MTOK_USD,
+            outputPerMillionTokensUsd: raw.AI_PRICE_OUTPUT_PER_MTOK_USD,
+          }
+        : null,
+  };
+}
+
 /**
  * Validate and normalize environment variables. Throws EnvValidationError listing every problem.
  * Error messages name the variable but never include its value, so secrets cannot leak into logs.
@@ -247,6 +339,7 @@ export function parseEnv(source: NodeJS.ProcessEnv): Env {
   }
 
   const social = parseSocialConfig(raw, isProduction, issues);
+  const ai = parseAiConfig(raw, issues);
 
   if (issues.length > 0) {
     throw new EnvValidationError(issues);
@@ -263,5 +356,6 @@ export function parseEnv(source: NodeJS.ProcessEnv): Env {
     SESSION_TTL_DAYS: raw.SESSION_TTL_DAYS,
     SESSION_COOKIE_SAMESITE: raw.SESSION_COOKIE_SAMESITE,
     SOCIAL: social,
+    AI: ai,
   };
 }

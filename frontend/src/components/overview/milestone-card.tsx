@@ -9,9 +9,10 @@ const BUILT_IN_THIS_MILESTONE = [
   'Accounts, sign-in and secure sessions',
   'Workspaces with owner and staff roles',
   'Facebook and Instagram account connection',
+  'AI Studio: captions, hashtags, ideas and brand voice',
 ];
 
-const COMING_NEXT = ['AI Studio for captions and hashtags', 'Scheduling, approvals and publishing'];
+const COMING_NEXT = ['Post editor and approvals', 'Scheduling and publishing'];
 
 export function MilestoneCard() {
   return (

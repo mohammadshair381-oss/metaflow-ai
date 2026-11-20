@@ -26,6 +26,8 @@ export const ERROR_CODES = [
   'INTEGRATION_ERROR',
   /** The server has no credentials for the integration yet. */
   'INTEGRATION_NOT_CONFIGURED',
+  /** The AI model or its safety system declined to write the requested content. */
+  'GENERATION_REFUSED',
   /** A dependency (the database) is temporarily unreachable. */
   'SERVICE_UNAVAILABLE',
 ] as const;

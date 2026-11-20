@@ -38,6 +38,7 @@ export function createInMemoryWorkspaceRepository(
         status: 'active',
         archivedAt: null,
         createdBy: ownerId,
+        brandVoice: null,
         createdAt: at,
         updatedAt: at,
       };
@@ -107,6 +108,24 @@ export function createInMemoryWorkspaceRepository(
       const membership: MembershipRecord = { workspaceId, userId, role, createdAt: tick() };
       memberships.push(membership);
       return Promise.resolve({ ...membership });
+    },
+
+    updateBrandVoice(workspaceId, { description, defaultLanguage, brandVoice }) {
+      const workspace = workspaces.get(workspaceId);
+      if (!workspace || workspace.status !== 'active') return Promise.resolve(null);
+      const updated = {
+        ...workspace,
+        description,
+        defaultLanguage,
+        brandVoice: {
+          ...brandVoice,
+          wordsToUse: [...brandVoice.wordsToUse],
+          wordsToAvoid: [...brandVoice.wordsToAvoid],
+        },
+        updatedAt: tick(),
+      };
+      workspaces.set(workspaceId, updated);
+      return Promise.resolve({ ...updated });
     },
 
     async listMembers(workspaceId) {

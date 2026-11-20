@@ -3,7 +3,9 @@ import { createServer } from 'node:http';
 import { createApp } from './app';
 import { createDatabase } from './config/database';
 import { EnvValidationError, parseEnv, type Env } from './config/env';
+import { createMongoAiRepositories } from './repositories/mongo-ai-repositories';
 import { createMongoAuthRepositories } from './repositories/mongo-auth-repositories';
+import { createMongoPostRepository } from './repositories/mongo-post-repository';
 import { createMongoSocialRepositories } from './repositories/mongo-social-repositories';
 import { createMongoWorkspaceRepository } from './repositories/mongo-workspace-repositories';
 import { createLogger } from './utils/logger';
@@ -48,6 +50,8 @@ function main(): void {
     authRepositories: createMongoAuthRepositories(),
     workspaceRepository: createMongoWorkspaceRepository(),
     socialRepositories: createMongoSocialRepositories(),
+    aiRepositories: createMongoAiRepositories(),
+    postRepository: createMongoPostRepository(),
   });
   const server = createServer(app);
   const shutdownController = new AbortController();
@@ -64,6 +68,9 @@ function main(): void {
       corsOrigins: env.CORS_ORIGINS,
       databaseConfigured: database.isConfigured,
       socialConnectionConfigured: env.SOCIAL !== null,
+      // Provider and model are not secret; the API key never appears in logs.
+      aiProvider: env.AI?.provider ?? null,
+      aiModel: env.AI?.model ?? null,
     });
   });
 

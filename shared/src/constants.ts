@@ -31,6 +31,14 @@ export const workspaceRoutes = (workspaceId: string) => {
     socialAccount: (accountId: string) => `${social}/${encodeURIComponent(accountId)}`,
     socialAccountRefresh: (accountId: string) =>
       `${social}/${encodeURIComponent(accountId)}/refresh`,
+    aiStatus: `${base}/ai/status`,
+    aiCaptions: `${base}/ai/captions`,
+    aiHashtags: `${base}/ai/hashtags`,
+    aiIdeas: `${base}/ai/ideas`,
+    aiBrandVoice: `${base}/ai/brand-voice`,
+    aiGenerations: `${base}/ai/generations`,
+    aiUsage: `${base}/ai/usage`,
+    posts: `${base}/posts`,
   } as const;
 };
 

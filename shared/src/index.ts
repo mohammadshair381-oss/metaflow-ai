@@ -4,3 +4,5 @@ export * from './api/health';
 export * from './api/auth';
 export * from './api/workspaces';
 export * from './api/social-accounts';
+export * from './api/ai-studio';
+export * from './api/posts';

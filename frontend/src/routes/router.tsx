@@ -57,6 +57,20 @@ export const appRoutes: RouteObject[] = [
                 },
               },
               {
+                path: '/ai-studio',
+                lazy: async () => {
+                  const { AiStudioPage } = await import('@/pages/ai-studio-page');
+                  return { Component: AiStudioPage };
+                },
+              },
+              {
+                path: '/posts',
+                lazy: async () => {
+                  const { PostsPage } = await import('@/pages/posts-page');
+                  return { Component: PostsPage };
+                },
+              },
+              {
                 path: '/accounts',
                 lazy: async () => {
                   const { SocialAccountsPage } = await import('@/pages/social-accounts-page');

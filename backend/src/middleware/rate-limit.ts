@@ -56,6 +56,32 @@ export function createIpRateLimiter(options: { windowMs: number; limit: number }
   });
 }
 
+export interface UserRateLimits {
+  windowMs: number;
+  limit: number;
+}
+
+/** AI generation: 30 requests per user per 10 minutes. */
+export const DEFAULT_AI_RATE_LIMITS: UserRateLimits = { windowMs: 10 * 60 * 1000, limit: 30 };
+
+/**
+ * Per signed-in user (after requireAuth), falling back to the client IP. For endpoints whose
+ * cost is per request, such as AI generation. Answers 429 RATE_LIMITED.
+ */
+export function createUserRateLimiter({ windowMs, limit }: UserRateLimits): RequestHandler {
+  return rateLimit({
+    windowMs,
+    limit,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    keyGenerator: (req, res) => {
+      const userId = (res.locals as { auth?: { user: { id: string } } }).auth?.user.id;
+      return userId ? `user:${userId}` : `ip:${clientIpKey(req)}`;
+    },
+    handler: rejectWith429,
+  });
+}
+
 /**
  * In-memory limiters: correct for a single backend instance (the current deployment).
  * Counters reset on restart. Running several instances needs a shared store (e.g. Redis).

@@ -169,6 +169,7 @@ Every non-2xx JSON response has this shape (`apiErrorResponseSchema` in `shared/
 | `INTERNAL_ERROR`             | 500  | Anything unexpected; details are logged only                                |
 | `INTEGRATION_ERROR`          | 502  | Meta refused or failed a request                                            |
 | `INTEGRATION_NOT_CONFIGURED` | 503  | Connecting accounts without Meta settings on the server                     |
+| `GENERATION_REFUSED`         | 422  | The AI model or its safety system declined to write the content             |
 | `SERVICE_UNAVAILABLE`        | 503  | MongoDB unreachable (connection/selection errors), instead of a generic 500 |
 
 Services throw `AppError`. Messages of unexpected errors and stack traces never reach clients.
@@ -194,17 +195,20 @@ Readiness reports the database as `up`, `down` or `not_configured` (no `MONGODB_
 - **Fail fast:** `bufferCommands` is off, so queries fail immediately while disconnected instead of hanging.
 - **Collections and indexes** (declared in `backend/src/models/`):
 
-  | Collection              | Index                                                | Purpose                                                                  |
-  | ----------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------ |
-  | `users`                 | `users_email_unique` (unique)                        | One account per normalized email; makes duplicate registration race-safe |
-  | `sessions`              | `sessions_token_hash_unique`                         | Session lookup by token hash                                             |
-  | `sessions`              | `sessions_user_revoked`                              | "Sign out everywhere" (`userId` + `revokedAt`)                           |
-  | `sessions`              | `sessions_expires_ttl` (TTL)                         | MongoDB deletes sessions once `expiresAt` has passed                     |
-  | `workspace_memberships` | `memberships_workspace_user_unique`                  | One membership per user and workspace; member lookups                    |
-  | `workspace_memberships` | `memberships_user_role`                              | A user's workspaces and owned-workspace count                            |
-  | `social_accounts`       | `social_accounts_workspace_platform_external_unique` | One connection per account and workspace; a workspace's accounts         |
-  | `oauth_states`          | `oauth_states_hash_unique`                           | Lookup and single use of a pending authorization                         |
-  | `oauth_states`          | `oauth_states_ttl` (TTL)                             | MongoDB deletes expired authorizations                                   |
+  | Collection              | Index                                                                        | Purpose                                                                  |
+  | ----------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+  | `users`                 | `users_email_unique` (unique)                                                | One account per normalized email; makes duplicate registration race-safe |
+  | `sessions`              | `sessions_token_hash_unique`                                                 | Session lookup by token hash                                             |
+  | `sessions`              | `sessions_user_revoked`                                                      | "Sign out everywhere" (`userId` + `revokedAt`)                           |
+  | `sessions`              | `sessions_expires_ttl` (TTL)                                                 | MongoDB deletes sessions once `expiresAt` has passed                     |
+  | `workspace_memberships` | `memberships_workspace_user_unique`                                          | One membership per user and workspace; member lookups                    |
+  | `workspace_memberships` | `memberships_user_role`                                                      | A user's workspaces and owned-workspace count                            |
+  | `social_accounts`       | `social_accounts_workspace_platform_external_unique`                         | One connection per account and workspace; a workspace's accounts         |
+  | `oauth_states`          | `oauth_states_hash_unique`                                                   | Lookup and single use of a pending authorization                         |
+  | `oauth_states`          | `oauth_states_ttl` (TTL)                                                     | MongoDB deletes expired authorizations                                   |
+  | `ai_generations`        | `ai_generations_workspace_recent`, `ai_generations_workspace_feature_recent` | A workspace's generation history, newest first, by feature               |
+  | `ai_usage`              | `ai_usage_workspace_time`                                                    | A workspace's usage for a period                                         |
+  | `posts`                 | `posts_workspace_recent`, `posts_workspace_status_recent`                    | A workspace's posts, newest first, by status                             |
 
 - **Indexes are never built automatically in production** (`autoIndex` and `autoCreate` are on only outside production). The procedure:
   1. Declare indexes in the schema and review index changes in the pull request like a migration.
@@ -331,6 +335,42 @@ Facebook Pages and Instagram professional accounts are connected to one workspac
 **Decisions:** the same Page may be connected to several workspaces (agencies), each with its own record. Disconnecting deletes the record; it does not revoke the app on Facebook.
 
 **Adding a platform later:** add a client under `integrations/`, a value to `SOCIAL_PLATFORMS`, and a branch in the social account service. Models, repositories, encryption, routes and the UI are platform-neutral.
+
+## AI Studio
+
+Captions, hashtags and content ideas for one workspace, written by one AI provider the server is configured with. Setup and external requirements: [ai-setup.md](ai-setup.md).
+
+**Status:** verified with simulated provider responses (all three adapters) and against the local database. No real provider has been called yet.
+
+**Layers**
+
+| Part              | Where                                                                                                        | Job                                                                                                                                                                                        |
+| ----------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Provider adapters | `integrations/ai/anthropic-provider.ts` (official SDK), `openai-provider.ts`, `gemini-provider.ts` (`fetch`) | One request shape each; map every failure to one `AiErrorKind`; return parsed JSON and the token usage the provider reported                                                               |
+| Model resolver    | `integrations/ai/ai-model-resolver.ts`                                                                       | Picks provider and model per feature and workspace. Today: one model from the environment for everything. Later: admin-managed providers and plan-based routing behind the same interface  |
+| Retry policy      | `integrations/ai/ai-retry.ts`                                                                                | At most one retry, to the same model, only after a fast failure the provider marks as not processed. Never after a timeout. Refusals are final: never retried, never sent to another model |
+| Prompts           | `services/ai-prompts.ts`                                                                                     | Business context and brand voice as quoted data, rules, the task, and a JSON schema in the subset all providers accept                                                                     |
+| Output checks     | `services/ai-output.ts`                                                                                      | Lengths, counts, hashtag format, idea types and platforms. Invalid items are dropped; nothing usable left is a failure                                                                     |
+| Service           | `services/ai-studio.service.ts`                                                                              | `requireAccess` first, then resolve the model, generate, check, record usage (also on failure), save the generation                                                                        |
+
+**Data:** `ai_generations` (workspace, user, feature, the settings used, the output, provider, model, usage) and `ai_usage` (one entry per request, successful or not: provider, configured and serving model, status, failure kind, tokens, estimated cost, latency). Neither stores a prompt. Token counts and costs are null when unknown, and usage totals skip nulls instead of counting them as zero. The brand voice is a subdocument of the workspace (`workspaces.brandVoice`); "About the business" and the content language are the workspace's own `description` and `defaultLanguage`, shared with workspace settings.
+
+**Endpoints** (`/api/workspaces/:workspaceId/ai`, session required):
+
+| Method & path      | Who    | Result                                                                                                                        |
+| ------------------ | ------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `GET /status`      | member | `{ configured, provider, model, costEstimates }`; never the key                                                               |
+| `POST /captions`   | member | 201 `{ generation }`. 503 `INTEGRATION_NOT_CONFIGURED`, 502 `INTEGRATION_ERROR`, 422 `GENERATION_REFUSED`, 429 `RATE_LIMITED` |
+| `POST /hashtags`   | member | Same                                                                                                                          |
+| `POST /ideas`      | member | Same                                                                                                                          |
+| `GET /brand-voice` | member | `{ brandVoice }` with `configured`                                                                                            |
+| `PUT /brand-voice` | owner  | Replaces it, including the shared description and language                                                                    |
+| `GET /generations` | member | Newest first; `feature`, `before` (cursor), `limit` (max 50)                                                                  |
+| `GET /usage`       | member | Totals for the current UTC month                                                                                              |
+
+Request bodies are strict: a `provider`, `model`, `system` or `prompt` field is rejected with 400. Generation is limited to 30 requests per user per 10 minutes.
+
+**Drafts** (`/api/workspaces/:workspaceId/posts`): `POST /` saves a draft (any member; `generationId` must belong to the same workspace), `GET /` lists posts newest first. This is the first part of the `posts` collection: status is always `draft` for now, and the content milestone adds editing, media, approval and scheduling to the same model.
 
 ## Cross-site cookies and custom domains
 

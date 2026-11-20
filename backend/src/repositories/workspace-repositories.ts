@@ -1,5 +1,7 @@
 import type {
   BusinessCategory,
+  ContentTone,
+  EmojiPreference,
   WorkspaceLanguage,
   WorkspaceRole,
   WorkspaceStatus,
@@ -11,6 +13,18 @@ import type {
  * in-memory one. Repositories never decide access: the service does, from memberships.
  */
 
+export interface BrandVoiceRecord {
+  targetAudience: string;
+  tone: ContentTone;
+  personality: string;
+  writingStyle: string;
+  wordsToUse: string[];
+  wordsToAvoid: string[];
+  emojiPreference: EmojiPreference;
+  additionalInstructions: string;
+  updatedAt: Date;
+}
+
 export interface WorkspaceRecord {
   id: string;
   name: string;
@@ -21,6 +35,8 @@ export interface WorkspaceRecord {
   status: WorkspaceStatus;
   archivedAt: Date | null;
   createdBy: string;
+  /** Null until the brand voice is saved for the first time. */
+  brandVoice: BrandVoiceRecord | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -69,6 +85,16 @@ export interface WorkspaceRepository {
   ): Promise<WorkspaceRecord | null>;
   /** Null when the workspace does not exist or is already archived. */
   archive(workspaceId: string, at: Date): Promise<WorkspaceRecord | null>;
+  /**
+   * Saves the brand voice together with the description and content language it shares with
+   * the workspace profile, in one update. Null when the workspace does not exist or is not active.
+   */
+  updateBrandVoice(
+    workspaceId: string,
+    update: Pick<WorkspaceProfile, 'description' | 'defaultLanguage'> & {
+      brandVoice: BrandVoiceRecord;
+    },
+  ): Promise<WorkspaceRecord | null>;
   /** Active workspaces the user belongs to, oldest first, each with the user's role. */
   listForUser(userId: string): Promise<WorkspaceWithRole[]>;
   countActiveOwnedBy(userId: string): Promise<number>;

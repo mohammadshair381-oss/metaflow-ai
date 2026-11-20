@@ -27,6 +27,19 @@ function toWorkspaceRecord(doc: WithId<WorkspaceFields>): WorkspaceRecord {
     status: doc.status,
     archivedAt: doc.archivedAt ?? null,
     createdBy: doc.createdBy.toString(),
+    brandVoice: doc.brandVoice
+      ? {
+          targetAudience: doc.brandVoice.targetAudience,
+          tone: doc.brandVoice.tone,
+          personality: doc.brandVoice.personality,
+          writingStyle: doc.brandVoice.writingStyle,
+          wordsToUse: [...doc.brandVoice.wordsToUse],
+          wordsToAvoid: [...doc.brandVoice.wordsToAvoid],
+          emojiPreference: doc.brandVoice.emojiPreference,
+          additionalInstructions: doc.brandVoice.additionalInstructions,
+          updatedAt: doc.brandVoice.updatedAt,
+        }
+      : null,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };
@@ -143,6 +156,16 @@ export function createMongoWorkspaceRepository(): WorkspaceRepository {
         }
         throw error;
       }
+    },
+
+    async updateBrandVoice(workspaceId, { description, defaultLanguage, brandVoice }) {
+      if (!isValidObjectId(workspaceId)) return null;
+      const doc = await WorkspaceModel.findOneAndUpdate(
+        { _id: new Types.ObjectId(workspaceId), status: 'active' },
+        { $set: { description, defaultLanguage, brandVoice } },
+        { new: true, runValidators: true },
+      ).lean();
+      return doc ? toWorkspaceRecord(doc) : null;
     },
 
     async listMembers(workspaceId) {

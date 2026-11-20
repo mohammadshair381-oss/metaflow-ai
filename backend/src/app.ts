@@ -7,10 +7,14 @@ import { createCorsOptions } from './config/cors';
 import type { DatabaseHealthProbe } from './config/database';
 import type { Env } from './config/env';
 import { createSessionCookieConfig } from './config/session-cookie';
+import { createAiStudioController } from './controllers/ai-studio.controller';
 import { createAuthController } from './controllers/auth.controller';
 import { createHealthController } from './controllers/health.controller';
+import { createPostController } from './controllers/post.controller';
 import { createSocialAccountController } from './controllers/social-account.controller';
 import { createWorkspaceController } from './controllers/workspace.controller';
+import { createEnvModelResolver } from './integrations/ai/ai-model-resolver';
+import type { AiProvider } from './integrations/ai/ai-provider';
 import { createMetaClient, type MetaClient } from './integrations/meta/meta-client';
 import { createRequireAuth } from './middleware/authenticate';
 import { createErrorHandler } from './middleware/error-handler';
@@ -18,17 +22,24 @@ import { notFoundHandler } from './middleware/not-found';
 import {
   createAuthRateLimiters,
   createIpRateLimiter,
+  createUserRateLimiter,
+  DEFAULT_AI_RATE_LIMITS,
   type AuthRateLimits,
+  type UserRateLimits,
 } from './middleware/rate-limit';
 import { requestId } from './middleware/request-id';
 import { requestLogger } from './middleware/request-logger';
 import { requireTrustedOrigin } from './middleware/trusted-origin';
+import type { AiRepositories } from './repositories/ai-repositories';
 import type { AuthRepositories } from './repositories/auth-repositories';
+import type { PostRepository } from './repositories/post-repositories';
 import type { SocialRepositories } from './repositories/social-repositories';
 import type { WorkspaceRepository } from './repositories/workspace-repositories';
 import { createApiRouter } from './routes';
+import { createAiStudioService } from './services/ai-studio.service';
 import { createAuthService } from './services/auth.service';
 import { createHealthService } from './services/health.service';
+import { createPostService } from './services/post.service';
 import {
   createSocialAccountService,
   type SocialIntegration,
@@ -46,6 +57,12 @@ export interface AppDependencies {
   authRepositories: AuthRepositories;
   workspaceRepository: WorkspaceRepository;
   socialRepositories: SocialRepositories;
+  aiRepositories: AiRepositories;
+  postRepository: PostRepository;
+  /** Override only in tests; otherwise built from the AI settings in `env.AI`. */
+  aiProvider?: AiProvider;
+  /** Override only in tests; production uses DEFAULT_AI_RATE_LIMITS. */
+  aiRateLimits?: UserRateLimits;
   /** Override only in tests; otherwise built from the Meta settings in `env.SOCIAL`. */
   metaClient?: MetaClient;
   /** Override only in tests; production uses DEFAULT_AUTH_RATE_LIMITS. */
@@ -67,7 +84,11 @@ export function createApp({
   authRepositories,
   workspaceRepository,
   socialRepositories,
+  aiRepositories,
+  postRepository,
   metaClient,
+  aiProvider,
+  aiRateLimits = DEFAULT_AI_RATE_LIMITS,
   authRateLimits,
   now,
 }: AppDependencies): Express {
@@ -123,6 +144,22 @@ export function createApp({
     now,
   });
 
+  // Without an AI provider, model and key the resolver answers "not configured": brand voice,
+  // history and drafts work, generation answers 503 INTEGRATION_NOT_CONFIGURED.
+  const aiStudioService = createAiStudioService({
+    workspaces: workspaceService,
+    workspaceRepository,
+    repositories: aiRepositories,
+    models: createEnvModelResolver(env.AI, aiProvider),
+    logger,
+    now,
+  });
+  const postService = createPostService({
+    workspaces: workspaceService,
+    posts: postRepository,
+    generations: aiRepositories.generations,
+  });
+
   app.use(
     API_PREFIX,
     createApiRouter({
@@ -146,6 +183,12 @@ export function createApp({
         requireAuth,
         connectLimiter: createIpRateLimiter({ windowMs: 15 * 60 * 1000, limit: 20 }),
       },
+      ai: {
+        controller: createAiStudioController(aiStudioService),
+        requireAuth,
+        generationLimiter: createUserRateLimiter(aiRateLimits),
+      },
+      posts: { controller: createPostController(postService), requireAuth },
     }),
   );
 

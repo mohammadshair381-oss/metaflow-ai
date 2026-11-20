@@ -4,7 +4,6 @@ import {
   CreditCard,
   FileText,
   LayoutDashboard,
-  Palette,
   Settings,
   Share2,
   Sparkles,
@@ -39,8 +38,7 @@ export interface NavigationSection {
 const MILESTONES = {
   workspaces: { number: 3, name: 'Team invitations and role management' },
   meta: { number: 4, name: 'Facebook and Instagram connection' },
-  aiInfrastructure: { number: 5, name: 'AI infrastructure and brand profiles' },
-  content: { number: 6, name: 'AI Studio and content management' },
+  content: { number: 6, name: 'Content management' },
   publishing: { number: 7, name: 'Scheduling, approvals and publishing' },
   growth: { number: 8, name: 'Automation, analytics, billing and administration' },
 } as const;
@@ -48,28 +46,12 @@ const MILESTONES = {
 /** Modules that are routed but not built. Each renders an honest empty state. */
 export const PLANNED_MODULES: PlannedModule[] = [
   {
-    path: '/ai-studio',
-    label: 'AI Studio',
-    icon: Sparkles,
-    description:
-      'Generate captions and hashtags in your brand’s voice, compare variations and refine them before they become posts.',
-    milestone: MILESTONES.content,
-  },
-  {
     path: '/calendar',
     label: 'Content Calendar',
     icon: CalendarDays,
     description:
       'See scheduled and published posts across every connected account on one calendar.',
     milestone: MILESTONES.publishing,
-  },
-  {
-    path: '/posts',
-    label: 'Posts',
-    icon: FileText,
-    description:
-      'Draft, review and manage posts, with previews of how each one will look on Facebook and Instagram.',
-    milestone: MILESTONES.content,
   },
   {
     path: '/automations',
@@ -85,14 +67,6 @@ export const PLANNED_MODULES: PlannedModule[] = [
     icon: ChartColumn,
     description: 'Track reach, engagement and post performance for each connected account.',
     milestone: MILESTONES.growth,
-  },
-  {
-    path: '/brands',
-    label: 'Brand Profiles',
-    icon: Palette,
-    description:
-      'Describe each brand’s tone, audience and guidelines so generated content stays on-brand.',
-    milestone: MILESTONES.aiInfrastructure,
   },
   {
     path: '/team',
@@ -127,14 +101,9 @@ export const NAVIGATION: NavigationSection[] = [
     title: 'Workspace',
     items: [
       { path: '/accounts', label: 'Social Accounts', icon: Share2, planned: false },
-      ...plannedItems([
-        '/ai-studio',
-        '/calendar',
-        '/posts',
-        '/automations',
-        '/analytics',
-        '/brands',
-      ]),
+      { path: '/ai-studio', label: 'AI Studio', icon: Sparkles, planned: false },
+      { path: '/posts', label: 'Posts', icon: FileText, planned: false },
+      ...plannedItems(['/calendar', '/automations', '/analytics']),
     ],
   },
   {

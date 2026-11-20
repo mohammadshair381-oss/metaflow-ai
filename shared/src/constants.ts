@@ -21,8 +21,21 @@ export const API_ROUTES = {
 /** Paths below one workspace. The server checks membership on every one of them. */
 export const workspaceRoutes = (workspaceId: string) => {
   const base = `${API_ROUTES.workspaces}/${encodeURIComponent(workspaceId)}`;
-  return { detail: base, archive: `${base}/archive`, members: `${base}/members` } as const;
+  const social = `${base}/social-accounts`;
+  return {
+    detail: base,
+    archive: `${base}/archive`,
+    members: `${base}/members`,
+    socialAccounts: social,
+    socialConnect: `${social}/connect`,
+    socialAccount: (accountId: string) => `${social}/${encodeURIComponent(accountId)}`,
+    socialAccountRefresh: (accountId: string) =>
+      `${social}/${encodeURIComponent(accountId)}/refresh`,
+  } as const;
 };
+
+/** Where Meta sends the browser back after authorization. Registered in the Meta app. */
+export const META_OAUTH_CALLBACK_PATH = `${API_PREFIX}/social/meta/callback`;
 
 /** Header used to correlate a request across frontend, backend and logs. */
 export const REQUEST_ID_HEADER = 'X-Request-Id';

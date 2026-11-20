@@ -22,6 +22,10 @@ export const ERROR_CODES = [
   'PAYLOAD_TOO_LARGE',
   'RATE_LIMITED',
   'INTERNAL_ERROR',
+  /** An external platform (Meta) refused or failed a request. */
+  'INTEGRATION_ERROR',
+  /** The server has no credentials for the integration yet. */
+  'INTEGRATION_NOT_CONFIGURED',
   /** A dependency (the database) is temporarily unreachable. */
   'SERVICE_UNAVAILABLE',
 ] as const;

@@ -4,6 +4,7 @@ import { createApp } from './app';
 import { createDatabase } from './config/database';
 import { EnvValidationError, parseEnv, type Env } from './config/env';
 import { createMongoAuthRepositories } from './repositories/mongo-auth-repositories';
+import { createMongoSocialRepositories } from './repositories/mongo-social-repositories';
 import { createMongoWorkspaceRepository } from './repositories/mongo-workspace-repositories';
 import { createLogger } from './utils/logger';
 
@@ -46,6 +47,7 @@ function main(): void {
     logger,
     authRepositories: createMongoAuthRepositories(),
     workspaceRepository: createMongoWorkspaceRepository(),
+    socialRepositories: createMongoSocialRepositories(),
   });
   const server = createServer(app);
   const shutdownController = new AbortController();
@@ -61,6 +63,7 @@ function main(): void {
       environment: env.NODE_ENV,
       corsOrigins: env.CORS_ORIGINS,
       databaseConfigured: database.isConfigured,
+      socialConnectionConfigured: env.SOCIAL !== null,
     });
   });
 

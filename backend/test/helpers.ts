@@ -1,10 +1,13 @@
 import type { PingResult, DatabaseHealthProbe } from '../src/config/database';
 import { parseEnv, type Env } from '../src/config/env';
 import { createApp, type AppDependencies } from '../src/app';
+import type { MetaClient } from '../src/integrations/meta/meta-client';
 import type { AuthRepositories } from '../src/repositories/auth-repositories';
+import type { SocialRepositories } from '../src/repositories/social-repositories';
 import type { WorkspaceRepository } from '../src/repositories/workspace-repositories';
 import { createLogger, type Logger } from '../src/utils/logger';
 import { createInMemoryAuthRepositories } from './support/in-memory-auth-repositories';
+import { createInMemorySocialRepositories } from './support/in-memory-social-repositories';
 import { createInMemoryWorkspaceRepository } from './support/in-memory-workspace-repository';
 
 export const FRONTEND_ORIGIN = 'http://localhost:3000';
@@ -34,6 +37,8 @@ export function buildTestApp(
     logger?: Logger;
     authRepositories?: AuthRepositories;
     workspaceRepository?: WorkspaceRepository;
+    socialRepositories?: SocialRepositories;
+    metaClient?: MetaClient;
     authRateLimits?: AppDependencies['authRateLimits'];
     now?: () => Date;
   } = {},
@@ -46,6 +51,8 @@ export function buildTestApp(
     authRepositories,
     workspaceRepository:
       options.workspaceRepository ?? createInMemoryWorkspaceRepository(authRepositories.users),
+    socialRepositories: options.socialRepositories ?? createInMemorySocialRepositories(),
+    metaClient: options.metaClient,
     authRateLimits: options.authRateLimits,
     now: options.now,
   });

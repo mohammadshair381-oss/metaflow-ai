@@ -8,13 +8,10 @@ const BUILT_IN_THIS_MILESTONE = [
   'Credentialed CORS between web app and API',
   'Accounts, sign-in and secure sessions',
   'Workspaces with owner and staff roles',
+  'Facebook and Instagram account connection',
 ];
 
-const COMING_NEXT = [
-  'Facebook Page and Instagram connections',
-  'AI Studio for captions and hashtags',
-  'Scheduling, approvals and publishing',
-];
+const COMING_NEXT = ['AI Studio for captions and hashtags', 'Scheduling, approvals and publishing'];
 
 export function MilestoneCard() {
   return (

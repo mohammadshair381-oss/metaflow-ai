@@ -9,21 +9,34 @@ import type { Env } from './config/env';
 import { createSessionCookieConfig } from './config/session-cookie';
 import { createAuthController } from './controllers/auth.controller';
 import { createHealthController } from './controllers/health.controller';
+import { createSocialAccountController } from './controllers/social-account.controller';
 import { createWorkspaceController } from './controllers/workspace.controller';
+import { createMetaClient, type MetaClient } from './integrations/meta/meta-client';
 import { createRequireAuth } from './middleware/authenticate';
 import { createErrorHandler } from './middleware/error-handler';
 import { notFoundHandler } from './middleware/not-found';
-import { createAuthRateLimiters, type AuthRateLimits } from './middleware/rate-limit';
+import {
+  createAuthRateLimiters,
+  createIpRateLimiter,
+  type AuthRateLimits,
+} from './middleware/rate-limit';
 import { requestId } from './middleware/request-id';
 import { requestLogger } from './middleware/request-logger';
 import { requireTrustedOrigin } from './middleware/trusted-origin';
 import type { AuthRepositories } from './repositories/auth-repositories';
+import type { SocialRepositories } from './repositories/social-repositories';
 import type { WorkspaceRepository } from './repositories/workspace-repositories';
 import { createApiRouter } from './routes';
 import { createAuthService } from './services/auth.service';
 import { createHealthService } from './services/health.service';
+import {
+  createSocialAccountService,
+  type SocialIntegration,
+} from './services/social-account.service';
 import { createWorkspaceService } from './services/workspace.service';
+import { readCookie } from './utils/cookies';
 import type { Logger } from './utils/logger';
+import { createSecretBox } from './utils/secret-box';
 
 export interface AppDependencies {
   env: Env;
@@ -32,6 +45,9 @@ export interface AppDependencies {
   /** MongoDB-backed in the server; in-memory in tests. */
   authRepositories: AuthRepositories;
   workspaceRepository: WorkspaceRepository;
+  socialRepositories: SocialRepositories;
+  /** Override only in tests; otherwise built from the Meta settings in `env.SOCIAL`. */
+  metaClient?: MetaClient;
   /** Override only in tests; production uses DEFAULT_AUTH_RATE_LIMITS. */
   authRateLimits?: AuthRateLimits;
   now?: () => Date;
@@ -50,6 +66,8 @@ export function createApp({
   logger,
   authRepositories,
   workspaceRepository,
+  socialRepositories,
+  metaClient,
   authRateLimits,
   now,
 }: AppDependencies): Express {
@@ -82,6 +100,29 @@ export function createApp({
   const requireAuth = createRequireAuth(authService, sessionCookie);
   const workspaceService = createWorkspaceService({ repository: workspaceRepository, now });
 
+  // Without Meta credentials and encryption keys the integration stays off: accounts can be
+  // listed (there are none) but nothing can be connected, and no token is ever stored.
+  const socialIntegration: SocialIntegration | null = env.SOCIAL
+    ? {
+        meta:
+          metaClient ??
+          createMetaClient({
+            appId: env.SOCIAL.metaAppId,
+            appSecret: env.SOCIAL.metaAppSecret,
+            redirectUri: env.SOCIAL.metaRedirectUri,
+            graphApiVersion: env.SOCIAL.metaGraphApiVersion,
+          }),
+        secretBox: createSecretBox(env.SOCIAL.tokenEncryptionKeys),
+      }
+    : null;
+  const socialAccountService = createSocialAccountService({
+    workspaces: workspaceService,
+    repositories: socialRepositories,
+    integration: socialIntegration,
+    logger,
+    now,
+  });
+
   app.use(
     API_PREFIX,
     createApiRouter({
@@ -92,6 +133,19 @@ export function createApp({
         limiters: createAuthRateLimiters(authRateLimits),
       },
       workspaces: { controller: createWorkspaceController(workspaceService), requireAuth },
+      social: {
+        controller: createSocialAccountController({
+          service: socialAccountService,
+          sessionUserId: async (req) => {
+            const token = readCookie(req.headers.cookie, sessionCookie.name);
+            return (await authService.authenticate(token))?.user.id ?? null;
+          },
+          // The first allowed origin is the web app's public address.
+          appOrigin: env.CORS_ORIGINS[0] ?? 'http://localhost:3000',
+        }),
+        requireAuth,
+        connectLimiter: createIpRateLimiter({ windowMs: 15 * 60 * 1000, limit: 20 }),
+      },
     }),
   );
 

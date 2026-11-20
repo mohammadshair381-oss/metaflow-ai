@@ -48,14 +48,6 @@ const MILESTONES = {
 /** Modules that are routed but not built. Each renders an honest empty state. */
 export const PLANNED_MODULES: PlannedModule[] = [
   {
-    path: '/accounts',
-    label: 'Social Accounts',
-    icon: Share2,
-    description:
-      'Connect Facebook Pages and Instagram Professional accounts through Meta’s official login, and see which permissions each one has granted.',
-    milestone: MILESTONES.meta,
-  },
-  {
     path: '/ai-studio',
     label: 'AI Studio',
     icon: Sparkles,
@@ -133,15 +125,17 @@ export const NAVIGATION: NavigationSection[] = [
   },
   {
     title: 'Workspace',
-    items: plannedItems([
-      '/accounts',
-      '/ai-studio',
-      '/calendar',
-      '/posts',
-      '/automations',
-      '/analytics',
-      '/brands',
-    ]),
+    items: [
+      { path: '/accounts', label: 'Social Accounts', icon: Share2, planned: false },
+      ...plannedItems([
+        '/ai-studio',
+        '/calendar',
+        '/posts',
+        '/automations',
+        '/analytics',
+        '/brands',
+      ]),
+    ],
   },
   {
     title: 'Organization',

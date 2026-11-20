@@ -153,21 +153,23 @@ Every non-2xx JSON response has this shape (`apiErrorResponseSchema` in `shared/
 }
 ```
 
-| Code                  | HTTP | Raised by                                                                   |
-| --------------------- | ---- | --------------------------------------------------------------------------- |
-| `BAD_REQUEST`         | 400  | Malformed JSON body                                                         |
-| `VALIDATION_ERROR`    | 400  | `parseRequest()` / Zod                                                      |
-| `UNAUTHENTICATED`     | 401  | No valid session (missing, expired, revoked, or the user is not active)     |
-| `INVALID_CREDENTIALS` | 401  | Login with a wrong email or password (same message for both)                |
-| `FORBIDDEN`           | 403  | State-changing request from an origin not in `CORS_ORIGINS`                 |
-| `PERMISSION_DENIED`   | 403  | Signed in, but the workspace role does not allow the action                 |
-| `NOT_FOUND`           | 404  | Unknown route                                                               |
-| `EMAIL_TAKEN`         | 409  | Registration with an email that already has an account                      |
-| `LIMIT_REACHED`       | 409  | A per-user limit would be exceeded (owned workspaces)                       |
-| `PAYLOAD_TOO_LARGE`   | 413  | Body above the limit                                                        |
-| `RATE_LIMITED`        | 429  | Too many register/login attempts                                            |
-| `INTERNAL_ERROR`      | 500  | Anything unexpected; details are logged only                                |
-| `SERVICE_UNAVAILABLE` | 503  | MongoDB unreachable (connection/selection errors), instead of a generic 500 |
+| Code                         | HTTP | Raised by                                                                   |
+| ---------------------------- | ---- | --------------------------------------------------------------------------- |
+| `BAD_REQUEST`                | 400  | Malformed JSON body                                                         |
+| `VALIDATION_ERROR`           | 400  | `parseRequest()` / Zod                                                      |
+| `UNAUTHENTICATED`            | 401  | No valid session (missing, expired, revoked, or the user is not active)     |
+| `INVALID_CREDENTIALS`        | 401  | Login with a wrong email or password (same message for both)                |
+| `FORBIDDEN`                  | 403  | State-changing request from an origin not in `CORS_ORIGINS`                 |
+| `PERMISSION_DENIED`          | 403  | Signed in, but the workspace role does not allow the action                 |
+| `NOT_FOUND`                  | 404  | Unknown route                                                               |
+| `EMAIL_TAKEN`                | 409  | Registration with an email that already has an account                      |
+| `LIMIT_REACHED`              | 409  | A per-user limit would be exceeded (owned workspaces)                       |
+| `PAYLOAD_TOO_LARGE`          | 413  | Body above the limit                                                        |
+| `RATE_LIMITED`               | 429  | Too many register/login attempts                                            |
+| `INTERNAL_ERROR`             | 500  | Anything unexpected; details are logged only                                |
+| `INTEGRATION_ERROR`          | 502  | Meta refused or failed a request                                            |
+| `INTEGRATION_NOT_CONFIGURED` | 503  | Connecting accounts without Meta settings on the server                     |
+| `SERVICE_UNAVAILABLE`        | 503  | MongoDB unreachable (connection/selection errors), instead of a generic 500 |
 
 Services throw `AppError`. Messages of unexpected errors and stack traces never reach clients.
 
@@ -192,14 +194,17 @@ Readiness reports the database as `up`, `down` or `not_configured` (no `MONGODB_
 - **Fail fast:** `bufferCommands` is off, so queries fail immediately while disconnected instead of hanging.
 - **Collections and indexes** (declared in `backend/src/models/`):
 
-  | Collection              | Index                               | Purpose                                                                  |
-  | ----------------------- | ----------------------------------- | ------------------------------------------------------------------------ |
-  | `users`                 | `users_email_unique` (unique)       | One account per normalized email; makes duplicate registration race-safe |
-  | `sessions`              | `sessions_token_hash_unique`        | Session lookup by token hash                                             |
-  | `sessions`              | `sessions_user_revoked`             | "Sign out everywhere" (`userId` + `revokedAt`)                           |
-  | `sessions`              | `sessions_expires_ttl` (TTL)        | MongoDB deletes sessions once `expiresAt` has passed                     |
-  | `workspace_memberships` | `memberships_workspace_user_unique` | One membership per user and workspace; member lookups                    |
-  | `workspace_memberships` | `memberships_user_role`             | A user's workspaces and owned-workspace count                            |
+  | Collection              | Index                                                | Purpose                                                                  |
+  | ----------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------ |
+  | `users`                 | `users_email_unique` (unique)                        | One account per normalized email; makes duplicate registration race-safe |
+  | `sessions`              | `sessions_token_hash_unique`                         | Session lookup by token hash                                             |
+  | `sessions`              | `sessions_user_revoked`                              | "Sign out everywhere" (`userId` + `revokedAt`)                           |
+  | `sessions`              | `sessions_expires_ttl` (TTL)                         | MongoDB deletes sessions once `expiresAt` has passed                     |
+  | `workspace_memberships` | `memberships_workspace_user_unique`                  | One membership per user and workspace; member lookups                    |
+  | `workspace_memberships` | `memberships_user_role`                              | A user's workspaces and owned-workspace count                            |
+  | `social_accounts`       | `social_accounts_workspace_platform_external_unique` | One connection per account and workspace; a workspace's accounts         |
+  | `oauth_states`          | `oauth_states_hash_unique`                           | Lookup and single use of a pending authorization                         |
+  | `oauth_states`          | `oauth_states_ttl` (TTL)                             | MongoDB deletes expired authorizations                                   |
 
 - **Indexes are never built automatically in production** (`autoIndex` and `autoCreate` are on only outside production). The procedure:
   1. Declare indexes in the schema and review index changes in the pull request like a migration.
@@ -281,6 +286,51 @@ A workspace is one business or brand. Everything a customer creates later (socia
 **Frontend:** `WorkspaceProvider` (inside the dashboard layout) loads the list and tracks the active workspace; `WorkspaceGate` renders pages only once one is active and asks a user without any to create the first. The active workspace ID is remembered per user in `localStorage`; it is a display preference, not a credential.
 
 **Not built yet:** logo upload (needs the media storage layer), brand voice (AI milestone), invitations and role changes (team milestone), plan-based workspace limits (billing milestone; the limit of 10 is a fixed safety cap until then).
+
+## Social accounts (Meta)
+
+Facebook Pages and Instagram professional accounts are connected to one workspace through Meta's Facebook Login. Setup and external requirements: [meta-setup.md](meta-setup.md).
+
+**Status:** verified with simulated Meta responses and against the local database. Not yet run against the real Meta platform.
+
+**Data:** `social_accounts` (workspace, platform, Meta's account ID, name, username, type, picture URL, status, issue, granted and missing permissions, encrypted token, `linkedPageId`, who connected it and when, last check) and `oauth_states` (hash of the `state` value, user, workspace, platform, expiry, `consumedAt`; deleted by a TTL index).
+
+**Connection flow**
+
+1. `POST /api/workspaces/:id/social-accounts/connect` (owner). The server creates a 256-bit random `state`, stores only its SHA-256 hash with the user, workspace and platform, valid 10 minutes, and returns Facebook's dialog URL. The browser navigates there.
+2. Meta redirects the browser to `GET /api/social/meta/callback?code&state`.
+3. The callback, in this order: consumes the state atomically (unknown, used or expired → stop); requires the session user to be the user who started it; re-checks that user is still the workspace owner; then exchanges the code, upgrades to a long-lived user token, reads granted permissions and the person's Pages.
+4. It saves one record per Page (Facebook) or per Instagram account linked to a Page (Instagram), each with that Page's access token, encrypted. The user token is discarded.
+5. It always answers with a redirect to `<web app>/accounts?meta=<result>&count=<n>`. The result is one of a fixed list; nothing from Meta or from the callback URL is echoed, and the destination comes from server configuration only.
+
+**Protections**
+
+| Risk                                    | Defence                                                                                                                                         |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| CSRF / connecting an attacker's account | `state` is unguessable, single-use and bound to the user's session                                                                              |
+| State replay, code reuse                | The state is consumed before the code is exchanged; a second use is refused                                                                     |
+| Cross-workspace access                  | The workspace comes from the stored state, never from the URL; every account query is scoped by workspace after `requireAccess`                 |
+| Open redirect                           | The callback redirects only to the configured web app origin, path `/accounts`; the web app only follows `https://www.facebook.com`             |
+| Token leakage                           | Tokens are encrypted at rest, excluded from queries by default, absent from every response type, and sent to Meta in the `Authorization` header |
+| Duplicate connections                   | Unique index on workspace + platform + Meta account ID; reconnecting updates the same record                                                    |
+
+**Token encryption:** AES-256-GCM (`utils/secret-box.ts`), stored as `v1.<keyId>.<iv>.<tag>.<ciphertext>`. The key ID allows rotation (`SOCIAL_TOKEN_ENCRYPTION_KEYS`: first key encrypts, all decrypt). Each value is bound to its record (workspace, platform, account ID) as additional authenticated data, so a ciphertext copied to another record does not decrypt. The schema rejects anything not in this format, so a plaintext token cannot be saved by mistake.
+
+**Account health:** `status` is `connected` or `needs_reconnect`, with an `issue`: `token_invalid` (Meta error 190 or 102, or an unreadable stored token), `missing_permissions` (a required permission was not granted, or Meta error 10 / 200–299) or `insufficient_page_role` (no `CREATE_CONTENT` task on the Page). "Check connection" re-reads the account from Meta and updates this.
+
+**Endpoints** (`/api/workspaces/:workspaceId/social-accounts`, session required):
+
+| Method & path              | Who    | Result                                                                                                              |
+| -------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------- |
+| `GET /`                    | member | `{ accounts, integration: { configured } }`                                                                         |
+| `POST /connect`            | owner  | `{ authorizationUrl }`. 503 `INTEGRATION_NOT_CONFIGURED` without Meta settings. Limited to 20 per 15 minutes per IP |
+| `GET /:accountId`          | member | The account                                                                                                         |
+| `POST /:accountId/refresh` | member | The account after a check against Meta. 502 `INTEGRATION_ERROR` when Meta is unavailable                            |
+| `DELETE /:accountId`       | owner  | 204. Deletes the connection and its token                                                                           |
+
+**Decisions:** the same Page may be connected to several workspaces (agencies), each with its own record. Disconnecting deletes the record; it does not revoke the app on Facebook.
+
+**Adding a platform later:** add a client under `integrations/`, a value to `SOCIAL_PLATFORMS`, and a branch in the social account service. Models, repositories, encryption, routes and the UI are platform-neutral.
 
 ## Cross-site cookies and custom domains
 

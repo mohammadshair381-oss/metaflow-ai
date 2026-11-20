@@ -1,4 +1,4 @@
-import { APP_ENVIRONMENTS } from '@metaflow/shared';
+import { APP_ENVIRONMENTS, META_OAUTH_CALLBACK_PATH } from '@metaflow/shared';
 import { z } from 'zod';
 
 export const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
@@ -6,6 +6,20 @@ export type LogLevel = (typeof LOG_LEVELS)[number];
 
 export const COOKIE_SAME_SITE_VALUES = ['lax', 'strict', 'none'] as const;
 export type CookieSameSite = (typeof COOKIE_SAME_SITE_VALUES)[number];
+
+export const DEFAULT_META_GRAPH_API_VERSION = 'v27.0';
+const TOKEN_KEY_BYTES = 32;
+
+/** Meta app credentials and the keys that encrypt stored social tokens. All secret. */
+export interface SocialConfig {
+  metaAppId: string;
+  metaAppSecret: string;
+  /** Must be registered in the Meta app as a valid OAuth redirect URI. */
+  metaRedirectUri: string;
+  metaGraphApiVersion: string;
+  /** 32-byte keys. The first encrypts; all of them decrypt (key rotation). */
+  tokenEncryptionKeys: Buffer[];
+}
 
 const DEVELOPMENT_CORS_ORIGINS = ['http://localhost:3000'];
 
@@ -41,6 +55,22 @@ const rawEnvSchema = z.object({
     (value) => (typeof value === 'string' ? value.trim().toLowerCase() || undefined : value),
     z.enum(COOKIE_SAME_SITE_VALUES).default('lax'),
   ),
+  /**
+   * Social account connection (Meta). Optional as a group: with none of the four set, the API
+   * starts and reports the integration as not configured. With only some set, startup fails.
+   */
+  META_APP_ID: z.preprocess(blankToUndefined, z.string().trim().optional()),
+  META_APP_SECRET: z.preprocess(blankToUndefined, z.string().trim().optional()),
+  META_REDIRECT_URI: z.preprocess(blankToUndefined, z.string().trim().optional()),
+  SOCIAL_TOKEN_ENCRYPTION_KEYS: z.preprocess(blankToUndefined, z.string().trim().optional()),
+  META_GRAPH_API_VERSION: z.preprocess(
+    blankToUndefined,
+    z
+      .string()
+      .trim()
+      .regex(/^v\d{1,3}\.\d{1,2}$/, 'must look like v27.0')
+      .default(DEFAULT_META_GRAPH_API_VERSION),
+  ),
 });
 
 export interface Env {
@@ -55,6 +85,8 @@ export interface Env {
   GIT_COMMIT: string | null;
   SESSION_TTL_DAYS: number;
   SESSION_COOKIE_SAMESITE: CookieSameSite;
+  /** Null until the Meta app and token encryption keys are configured. */
+  SOCIAL: SocialConfig | null;
 }
 
 export class EnvValidationError extends Error {
@@ -86,6 +118,74 @@ function parseOrigin(value: string): { origin: string } | { error: string } {
     };
   }
   return { origin: url.origin };
+}
+
+/** All-or-nothing: partial configuration is an error, never a silent "not configured". */
+function parseSocialConfig(
+  raw: z.infer<typeof rawEnvSchema>,
+  isProduction: boolean,
+  issues: string[],
+): SocialConfig | null {
+  const required = {
+    META_APP_ID: raw.META_APP_ID,
+    META_APP_SECRET: raw.META_APP_SECRET,
+    META_REDIRECT_URI: raw.META_REDIRECT_URI,
+    SOCIAL_TOKEN_ENCRYPTION_KEYS: raw.SOCIAL_TOKEN_ENCRYPTION_KEYS,
+  };
+  const missing = Object.entries(required).filter(([, value]) => value === undefined);
+  if (missing.length === Object.keys(required).length) return null;
+  for (const [name] of missing) {
+    issues.push(`${name}: is required when social account connection is configured`);
+  }
+  const before = issues.length;
+
+  if (required.META_APP_ID !== undefined && !/^\d{5,32}$/.test(required.META_APP_ID)) {
+    issues.push('META_APP_ID: must be the numeric app ID from the Meta app dashboard');
+  }
+
+  if (required.META_REDIRECT_URI !== undefined) {
+    let url: URL | undefined;
+    try {
+      url = new URL(required.META_REDIRECT_URI);
+    } catch {
+      issues.push('META_REDIRECT_URI: is not a valid URL');
+    }
+    if (url) {
+      if (url.pathname !== META_OAUTH_CALLBACK_PATH || url.search !== '' || url.hash !== '') {
+        issues.push(
+          `META_REDIRECT_URI: must end with ${META_OAUTH_CALLBACK_PATH} and have no query`,
+        );
+      } else if (isProduction && url.protocol !== 'https:') {
+        issues.push('META_REDIRECT_URI: must use https in production');
+      }
+    }
+  }
+
+  const keys: Buffer[] = [];
+  if (required.SOCIAL_TOKEN_ENCRYPTION_KEYS !== undefined) {
+    const entries = required.SOCIAL_TOKEN_ENCRYPTION_KEYS.split(',')
+      .map((entry) => entry.trim())
+      .filter((entry) => entry !== '');
+    if (entries.length === 0) issues.push('SOCIAL_TOKEN_ENCRYPTION_KEYS: must contain a key');
+    entries.forEach((entry, index) => {
+      const key = /^[A-Za-z0-9+/_-]+={0,2}$/.test(entry) ? Buffer.from(entry, 'base64') : null;
+      if (key?.length === TOKEN_KEY_BYTES) keys.push(key);
+      else {
+        issues.push(
+          `SOCIAL_TOKEN_ENCRYPTION_KEYS[${index}]: must be ${TOKEN_KEY_BYTES} random bytes, base64-encoded`,
+        );
+      }
+    });
+  }
+
+  if (missing.length > 0 || issues.length > before) return null;
+  return {
+    metaAppId: required.META_APP_ID as string,
+    metaAppSecret: required.META_APP_SECRET as string,
+    metaRedirectUri: required.META_REDIRECT_URI as string,
+    metaGraphApiVersion: raw.META_GRAPH_API_VERSION,
+    tokenEncryptionKeys: keys,
+  };
 }
 
 /**
@@ -146,6 +246,8 @@ export function parseEnv(source: NodeJS.ProcessEnv): Env {
     );
   }
 
+  const social = parseSocialConfig(raw, isProduction, issues);
+
   if (issues.length > 0) {
     throw new EnvValidationError(issues);
   }
@@ -160,5 +262,6 @@ export function parseEnv(source: NodeJS.ProcessEnv): Env {
     GIT_COMMIT: raw.RENDER_GIT_COMMIT ? raw.RENDER_GIT_COMMIT.slice(0, 7) : null,
     SESSION_TTL_DAYS: raw.SESSION_TTL_DAYS,
     SESSION_COOKIE_SAMESITE: raw.SESSION_COOKIE_SAMESITE,
+    SOCIAL: social,
   };
 }

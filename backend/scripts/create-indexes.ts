@@ -13,6 +13,7 @@ import mongoose, { type Model } from 'mongoose';
 import { createDatabase } from '../src/config/database';
 import { EnvValidationError, parseEnv } from '../src/config/env';
 import { SessionModel } from '../src/models/session.model';
+import { OAuthStateModel, SocialAccountModel } from '../src/models/social-account.model';
 import { UserModel } from '../src/models/user.model';
 import { WorkspaceMembershipModel, WorkspaceModel } from '../src/models/workspace.model';
 import { createLogger } from '../src/utils/logger';
@@ -23,6 +24,8 @@ const MODELS: Model<never>[] = [
   SessionModel,
   WorkspaceModel,
   WorkspaceMembershipModel,
+  SocialAccountModel,
+  OAuthStateModel,
 ] as unknown as Model<never>[];
 const out = (line: string) => process.stdout.write(`${line}\n`);
 

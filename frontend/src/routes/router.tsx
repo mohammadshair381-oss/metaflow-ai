@@ -57,6 +57,13 @@ export const appRoutes: RouteObject[] = [
                 },
               },
               {
+                path: '/accounts',
+                lazy: async () => {
+                  const { SocialAccountsPage } = await import('@/pages/social-accounts-page');
+                  return { Component: SocialAccountsPage };
+                },
+              },
+              {
                 path: '/settings',
                 lazy: async () => {
                   const { WorkspaceSettingsPage } = await import('@/pages/workspace-settings-page');

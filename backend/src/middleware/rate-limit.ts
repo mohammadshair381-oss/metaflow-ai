@@ -45,6 +45,17 @@ const accountKey = (req: Request) => {
   return email.success ? email.data : '(invalid)';
 };
 
+/** A plain per-client-IP limit for a sensitive endpoint. Answers 429 RATE_LIMITED. */
+export function createIpRateLimiter(options: { windowMs: number; limit: number }): RequestHandler {
+  return rateLimit({
+    ...options,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    keyGenerator: (req) => `ip:${clientIpKey(req)}`,
+    handler: rejectWith429,
+  });
+}
+
 /**
  * In-memory limiters: correct for a single backend instance (the current deployment).
  * Counters reset on restart. Running several instances needs a shared store (e.g. Redis).

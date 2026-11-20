@@ -28,7 +28,7 @@ export function DashboardLayout() {
             <SidebarNav />
           </div>
           <div className="text-muted-foreground border-t px-5 py-4 text-xs">
-            Workspaces milestone · v0.1
+            Social accounts milestone · v0.1
           </div>
         </aside>
 

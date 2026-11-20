@@ -2,8 +2,8 @@
 
 AI-powered social media automation SaaS. Businesses, creators and agencies will connect Facebook Pages and Instagram Professional accounts, generate content with AI, and schedule or auto-publish it.
 
-> **Status: Milestone 1 — deployment foundation.**
-> The repository has a deployable frontend and backend that talk to each other, with health and readiness checks. No product features (sign-in, workspaces, Meta connection, AI, publishing) are built yet. They come in later milestones, after this foundation is deployed and approved.
+> **Status: Milestone 2 — accounts and authentication (built and tested locally; not deployed).**
+> Users can register, sign in, stay signed in across reloads and sign out, with server-managed sessions in HTTP-only cookies. The deployment foundation (milestone 1) is ready but its production deployment is postponed. Workspaces, Meta connection, AI and publishing come in later milestones.
 
 ## Architecture
 
@@ -62,12 +62,11 @@ pnpm install
 pnpm dev            # backend on http://localhost:4000, frontend on http://localhost:3000
 ```
 
-Open <http://localhost:3000/dashboard>. The **Backend connection** panel should show _Connected_.
+Open <http://localhost:3000>, create an account, and you land on the dashboard. The **Backend connection** panel should show _Connected_.
 
-No env files are needed for local development:
-
-- The frontend calls `/api` on its own origin and the Vite dev server proxies it to `http://localhost:4000`, so no CORS is involved locally.
-- Without `MONGODB_URI`, readiness reports the database as _not configured_.
+- The frontend calls `/api` on its own origin and the Vite dev server proxies it to `http://localhost:4000`, so no CORS is involved locally and the session cookie is first-party.
+- **Sign-in needs a database.** Set `MONGODB_URI` in `backend/.env` (see `.env.example`). Without it the app runs, readiness reports the database as _not configured_, and registration/login answer 503.
+- In development the backend creates collections and indexes automatically **in whatever database `MONGODB_URI` names**. Point local development at its own database (for example `/metaflow_dev`), not the one production will use.
 
 To use a database or change defaults, copy the relevant section of [`.env.example`](.env.example) into `backend/.env` or `frontend/.env.local` (both git-ignored). To test the production-style cross-origin setup locally, set `VITE_API_BASE_URL=http://localhost:4000` in `frontend/.env.local`.
 
@@ -76,50 +75,58 @@ To use a database or change defaults, copy the relevant section of [`.env.exampl
 | Path                                                                                                                        | Page                                                                          |
 | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | `/`                                                                                                                         | Public landing page                                                           |
-| `/login`, `/register`                                                                                                       | Explain that accounts arrive next milestone (no fake forms)                   |
-| `/dashboard`                                                                                                                | Live backend connection status and build progress                             |
+| `/login`, `/register`                                                                                                       | Sign-in and registration forms                                                |
+| `/dashboard`                                                                                                                | Live backend connection status and build progress (signed in)                 |
 | `/accounts`, `/ai-studio`, `/calendar`, `/posts`, `/automations`, `/analytics`, `/brands`, `/team`, `/billing`, `/settings` | Honest empty states: what each module will do and which milestone delivers it |
 
-Signed-in routes sit behind a `ProtectedRoute` guard. Until sign-in exists they run in clearly labelled **preview mode** and store no data.
+Signed-in routes sit behind `ProtectedRoute`: visitors are sent to `/login` and returned to the page they wanted after signing in. The session survives reloads (it is restored from the HTTP-only cookie).
 
 ### Scripts
 
 Run from the repository root:
 
-| Command               | What it does                                                                |
-| --------------------- | --------------------------------------------------------------------------- |
-| `pnpm dev`            | Backend (watch mode) and frontend dev servers together                      |
-| `pnpm dev:backend`    | Backend only                                                                |
-| `pnpm dev:frontend`   | Frontend only                                                               |
-| `pnpm build`          | Production builds of every package                                          |
-| `pnpm start:backend`  | Run the built backend (`backend/dist`)                                      |
-| `pnpm start:frontend` | Serve the built frontend (`frontend/dist`) on port 3000 with `vite preview` |
-| `pnpm typecheck`      | TypeScript in every package                                                 |
-| `pnpm lint`           | ESLint in every package                                                     |
-| `pnpm test`           | Vitest in every package                                                     |
-| `pnpm format`         | Prettier, write changes                                                     |
-| `pnpm verify`         | format check + typecheck + lint + test + build                              |
+| Command                                      | What it does                                                                |
+| -------------------------------------------- | --------------------------------------------------------------------------- |
+| `pnpm dev`                                   | Backend (watch mode) and frontend dev servers together                      |
+| `pnpm dev:backend`                           | Backend only                                                                |
+| `pnpm dev:frontend`                          | Frontend only                                                               |
+| `pnpm build`                                 | Production builds of every package                                          |
+| `pnpm start:backend`                         | Run the built backend (`backend/dist`)                                      |
+| `pnpm start:frontend`                        | Serve the built frontend (`frontend/dist`) on port 3000 with `vite preview` |
+| `pnpm typecheck`                             | TypeScript in every package                                                 |
+| `pnpm lint`                                  | ESLint in every package                                                     |
+| `pnpm test`                                  | Vitest in every package                                                     |
+| `pnpm format`                                | Prettier, write changes                                                     |
+| `pnpm verify`                                | format check + typecheck + lint + test + build                              |
+| `pnpm --filter @metaflow/backend db:indexes` | List missing MongoDB indexes (read-only); add `--apply` to create them      |
 
 ## API
 
-| Method | Path                | Description                                                                                    |
-| ------ | ------------------- | ---------------------------------------------------------------------------------------------- |
-| GET    | `/api/health`       | Liveness. 200 while the process runs, regardless of the database                               |
-| GET    | `/api/health/ready` | Readiness. 200 when MongoDB answers (or is not configured in development), 503 when it is down |
+| Method | Path                   | Description                                                                                    |
+| ------ | ---------------------- | ---------------------------------------------------------------------------------------------- |
+| GET    | `/api/health`          | Liveness. 200 while the process runs, regardless of the database                               |
+| GET    | `/api/health/ready`    | Readiness. 200 when MongoDB answers (or is not configured in development), 503 when it is down |
+| POST   | `/api/auth/register`   | Create an account and sign in (201, session cookie). 409 if the email is taken                 |
+| POST   | `/api/auth/login`      | Sign in (200, new session cookie). 401 with a generic message for wrong email or password      |
+| POST   | `/api/auth/logout`     | Revoke the current session and clear the cookie (204)                                          |
+| POST   | `/api/auth/logout-all` | Revoke every session of the signed-in user (204)                                               |
+| GET    | `/api/auth/me`         | The signed-in user (200) or 401                                                                |
 
-Response shapes are defined once in [`shared/src/api`](shared/src/api) and validated by both sides.
+Response shapes are defined once in [`shared/src/api`](shared/src/api) and validated by both sides. Details, security measures and limitations: [docs/architecture.md → Authentication](docs/architecture.md#authentication-and-sessions).
 
 ## Environment variables
 
-| Variable            | Where    | Required                 | Purpose                                                                                   |
-| ------------------- | -------- | ------------------------ | ----------------------------------------------------------------------------------------- |
-| `NODE_ENV`          | backend  | production: `production` | Runtime mode                                                                              |
-| `PORT`              | backend  | no (Render sets it)      | Listen port, default 4000                                                                 |
-| `MONGODB_URI`       | backend  | **yes in production**    | MongoDB connection string (secret)                                                        |
-| `CORS_ORIGINS`      | backend  | **yes in production**    | Exact frontend origins allowed to call the API                                            |
-| `TRUST_PROXY`       | backend  | Render: `1`              | Proxy hops to trust                                                                       |
-| `LOG_LEVEL`         | backend  | no                       | `debug` / `info` / `warn` / `error`                                                       |
-| `VITE_API_BASE_URL` | frontend | **yes on Vercel**        | Backend origin, embedded at build time (public). Leave empty locally to use the dev proxy |
+| Variable                  | Where    | Required                 | Purpose                                                                                   |
+| ------------------------- | -------- | ------------------------ | ----------------------------------------------------------------------------------------- |
+| `NODE_ENV`                | backend  | production: `production` | Runtime mode                                                                              |
+| `PORT`                    | backend  | no (Render sets it)      | Listen port, default 4000                                                                 |
+| `MONGODB_URI`             | backend  | **yes in production**    | MongoDB connection string (secret)                                                        |
+| `CORS_ORIGINS`            | backend  | **yes in production**    | Exact frontend origins allowed to call the API                                            |
+| `TRUST_PROXY`             | backend  | Render: `1`              | Proxy hops to trust                                                                       |
+| `LOG_LEVEL`               | backend  | no                       | `debug` / `info` / `warn` / `error`                                                       |
+| `SESSION_TTL_DAYS`        | backend  | no (default 7)           | Session lifetime in days (1–90)                                                           |
+| `SESSION_COOKIE_SAMESITE` | backend  | no (default `lax`)       | `lax` / `strict` / `none` (`none` only in production, for a cross-site setup)             |
+| `VITE_API_BASE_URL`       | frontend | **yes on Vercel**        | Backend origin, embedded at build time (public). Leave empty locally to use the dev proxy |
 
 Full documentation: [`.env.example`](.env.example).
 
@@ -129,14 +136,14 @@ Full documentation: [`.env.example`](.env.example).
 pnpm test
 ```
 
-- `shared`: contract schemas.
-- `backend`: env validation, health and readiness, CORS, error envelope, request validation, logging and redaction, and the MongoDB utility against an unreachable server.
-- `frontend`: API client (success, HTTP errors, network failures, timeouts, contract mismatches, cancellation); every route, including one-`<h1>` checks; protected and guest route guards in each session state; and the status panel rendering Connected, Degraded and Unreachable from mocked HTTP responses (Testing Library + jsdom).
+- `shared`: contract schemas, including email normalization and the password policy.
+- `backend`: env validation, health and readiness, CORS, error envelope, request validation, logging and redaction, and the MongoDB utility against an unreachable server. Authentication over HTTP: registration (success, duplicate email, invalid email, weak password), login (success, wrong password, unknown email, suspended account, session replacement), logout and sign-out-everywhere, expired and revoked sessions, unauthorized requests, cookie attributes in development and production, no password data in any response, the Origin check, both rate limits, and a 503 when MongoDB is down. Password hashing, session tokens, cookie parsing, model schemas/indexes and the index plan.
+- `frontend`: API client; every route, including one-`<h1>` checks; route guards in each session state; the status panel; and the real auth flow with only `fetch` mocked: session restoration, retry after an outage, sign-in, registration (client- and server-side validation), sign-out, and a failed sign-out that keeps the user signed in.
 
-The live-database tests run only when `MONGODB_TEST_URI` points at a **disposable** database:
+Auth tests use **in-memory repositories**, so they need no database and never touch real data. The MongoDB suites (`database.test.ts` live part, `auth-mongo.test.ts`) run only when `MONGODB_TEST_URI` points at a **disposable** database whose name contains `test`; anything else is refused:
 
 ```bash
-MONGODB_TEST_URI="mongodb+srv://…/metaflow-test" pnpm --filter @metaflow/backend test
+MONGODB_TEST_URI="mongodb+srv://…/metaflow_test" pnpm --filter @metaflow/backend test
 ```
 
 ## Deployment
@@ -152,12 +159,14 @@ Short version: backend on Render via `render.yaml`; frontend on Vercel with Root
 - CORS allows explicit origins only, with credentials; no wildcard.
 - Request bodies are size-limited and validated with Zod; malformed JSON gets a clean 400.
 - Logs never contain request bodies, query strings, cookies or connection-string credentials.
-- Before sign-in ships, put both apps on one custom domain: cookies across `vercel.app` and `onrender.com` are third-party and unreliable. See [docs/architecture.md](docs/architecture.md#cross-site-cookies-and-custom-domains).
+- Passwords: scrypt (32 MiB, per-user salt). Sessions: random 256-bit tokens in `HttpOnly` cookies (`Secure` and `__Host-` in production); only SHA-256 hashes are stored; sessions expire and can be revoked.
+- Login gives one generic error for unknown emails and wrong passwords, with matching timing; auth endpoints are rate-limited per IP and per account; state-changing requests from unlisted origins are refused (CSRF).
+- Before deploying sign-in, put both apps on one custom domain: cookies across `vercel.app` and `onrender.com` are third-party and unreliable. See [docs/architecture.md](docs/architecture.md#cross-site-cookies-and-custom-domains).
 
 ## Roadmap
 
-1. **Deployment foundation** ← current
-2. Accounts, sign-in and server-managed sessions
+1. Deployment foundation (built; production deployment postponed)
+2. **Accounts, sign-in and server-managed sessions** ← current
 3. Workspaces, membership and role-based authorization
 4. Facebook and Instagram connection (Meta OAuth)
 5. AI infrastructure and brand profiles

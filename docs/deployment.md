@@ -155,6 +155,26 @@ curl -i https://metaflow-api.onrender.com/api/health/ready # expect 200, databas
 
 If it stays at 503 after two minutes, see Troubleshooting below.
 
+### 3c. Create the database indexes (before the first sign-up)
+
+Production never builds indexes automatically. The unique email index is what makes duplicate registration impossible, so create the indexes **before anyone registers**. From a machine whose `backend/.env` points `MONGODB_URI` at the production database (or from the Render service's Shell):
+
+```bash
+pnpm --filter @metaflow/backend db:indexes          # read-only: lists present and missing indexes
+pnpm --filter @metaflow/backend db:indexes --apply  # creates the missing ones (never drops any)
+```
+
+The command prints only the database name. Expect `users_email_unique`, `sessions_token_hash_unique`, `sessions_user_revoked` and `sessions_expires_ttl`.
+
+### Sign-in across domains: decide before deploying authentication
+
+The session cookie only works reliably when the frontend and the API share a site. With the default `*.vercel.app` and `*.onrender.com` domains they don't, and Safari blocks the cookie. Before deploying sign-in, either:
+
+- **Recommended:** put both on one custom domain (`app.yourdomain.com` and `api.yourdomain.com`), and keep `SESSION_COOKIE_SAMESITE` at its default `lax`; or
+- accept the browser limitations and set `SESSION_COOKIE_SAMESITE=none` on Render.
+
+Details: [architecture.md → Cross-site cookies](architecture.md#cross-site-cookies-and-custom-domains). Optional settings: `SESSION_TTL_DAYS` (default 7).
+
 ---
 
 ## 4. Frontend on Vercel

@@ -6,7 +6,7 @@ Guidance for AI agents and contributors working in this repository. Read this fi
 
 **MetaFlow AI**: a multi-tenant SaaS for AI-assisted social media management. Users connect Facebook Pages and Instagram Professional (Business/Creator) accounts, generate content with AI, and publish it with manual approval or automatically.
 
-**Current milestone: 1 — deployment foundation.** Only health checks and the dashboard shell exist. Do not start the next milestone until the owner has verified the live deployment and approved it.
+**Current milestone: 2 — accounts and authentication.** Built: health checks, the dashboard shell, and registration/login/logout with server-managed sessions. The owner postponed the production deployment of milestone 1 and approved starting this one. Do not start the next milestone (workspaces) until the owner approves it.
 
 ## Ground rules
 
@@ -38,12 +38,15 @@ Guidance for AI agents and contributors working in this repository. Read this fi
 
 ## Backend conventions
 
-- **Layers:** `routes/` → `controllers/` → `services/` → `models/`. Controllers are thin HTTP adapters; business logic lives in services, which take dependencies as arguments and never import Express.
+- **Layers:** `routes/` → `controllers/` → `services/` → `repositories/` → `models/`. Controllers are thin HTTP adapters; business logic lives in services, which take dependencies as arguments and never import Express or Mongoose. Services use repository **interfaces** (`repositories/*-repositories.ts`); the Mongoose implementation is injected in `server.ts`, an in-memory one in tests (`test/support/`).
+- **Records, not documents:** repositories return plain records. A user record has no password field; the hash is returned only by the credentials lookup used for login.
+- **Authenticated routes:** add `requireAuth` to the route and read the caller from `res.locals.auth`. Never take a user ID from the request for authorization.
 - **Validation:** every input goes through `parseRequest(req, { body, query, params })` with Zod schemas from `validators/` or `shared/`. Never read `req.body`/`req.query`/`req.params` directly.
 - **Errors:** throw `AppError` with a code from `shared/src/api/errors.ts`. Add a new code to `shared` together with the code that emits it. The central error handler formats every error response.
 - **Configuration:** read environment variables only in `config/env.ts`. Production must fail fast on missing or invalid config, and error messages name variables, never values.
 - **Logging:** use the injected `Logger`; `console` is lint-banned. Never log bodies, query strings, cookies, tokens or connection strings.
-- **Database:** use the connection in `config/database.ts`. Models declare their indexes; production indexes are applied manually (see `docs/architecture.md`, "Database"). Never call `syncIndexes()` or run destructive operations against production.
+- **Database:** use the connection in `config/database.ts`. Models declare their indexes; production indexes are applied manually with `pnpm --filter @metaflow/backend db:indexes --apply` (see `docs/architecture.md`, "Database"). Never call `syncIndexes()` or run destructive operations against production.
+- **Tests and data:** never point tests at the application database. Auth tests use in-memory repositories; MongoDB suites run only with `MONGODB_TEST_URI` and refuse database names without `test`.
 - **Tenant isolation (from the workspace milestone on):** every query on workspace-owned data must be scoped by a workspace ID that the server resolved from the authenticated user's membership. A workspace ID sent by the client is only a lookup key, never proof of access. Enforce roles in services, not only in routes or the UI.
 - **Async:** Express 5 forwards rejected promises to the error handler; do not add wrappers. `no-floating-promises` is an error.
 
@@ -52,7 +55,7 @@ Guidance for AI agents and contributors working in this repository. Read this fi
 - **Stack:** React 19 single-page app built with Vite, routed with React Router (`react-router-dom`). No server rendering; Vercel serves static files.
 - **Folders:** `pages/` (one component per route), `routes/` (route table, guards, navigation config), `components/ui` (shadcn/ui primitives), `components/layout`, `components/common`, feature folders such as `components/system-status`, `services/` (API calls), `hooks/`, `contexts/`, `lib/` (config, utilities), `assets/`.
 - **Routes:** add a route to `routes/router.tsx`; signed-in pages go under `ProtectedRoute` + `DashboardLayout` and are code-split with `lazy`. New modules are listed once in `routes/navigation.ts`, which drives both the sidebar and the routes.
-- **Auth guards** (`ProtectedRoute`, `GuestRoute`, `contexts/`) only control what the UI shows. The backend must authorize every request. Until sign-in exists, the session state is `unavailable` and the dashboard runs in labelled preview mode.
+- **Auth:** `useAuth()` gives `state` (`loading | anonymous | authenticated | error`) and `login`, `register`, `logout`, `retry`. Guards (`ProtectedRoute`, `GuestRoute`) only control what the UI shows; the backend authorizes every request. Change UI state only after the server confirms (no optimistic sign-out). Forms validate with the shared Zod schemas and map server errors with `lib/form-errors.ts`.
 - **API calls** go through `apiRequest()` in `services/api-client.ts` with a response schema from `shared`. It sends cookies, applies a timeout and validates responses. Never call `fetch` directly from components.
 - **Environment:** only `VITE_*` variables reach the browser, and all of them are public. `vite.config.ts` validates `VITE_API_BASE_URL` at build time and refuses secret-looking `VITE_` names. Read them only in `lib/config.ts`.
 - **Imports:** never import backend code (lint-enforced); use the `@metaflow/shared` entry point only.
@@ -63,9 +66,11 @@ Guidance for AI agents and contributors working in this repository. Read this fi
 ## Security
 
 - Credentialed CORS with an explicit origin allowlist; never `*`.
-- Sessions (next milestone): random token in an `HttpOnly`, `Secure`, `SameSite` cookie; only its SHA-256 hash is stored; sessions expire and can be revoked. Never put auth tokens in `localStorage`.
+- Sessions: random 256-bit token in an `HttpOnly` cookie (`Secure` + `__Host-` in production, `SameSite` from config); only its SHA-256 hash is stored; sessions expire and can be revoked. Never put auth tokens in `localStorage` or expose them to JavaScript.
+- Passwords: scrypt via `utils/password.ts` only. Never log, return or store a plain password; never return a hash.
+- Keep auth errors generic where they could reveal accounts (`INVALID_CREDENTIALS`).
+- State-changing endpoints are covered by the `Origin` check; new auth-like endpoints (password reset, etc.) need rate limits.
 - Never trust frontend checks for permissions, plan limits or subscription status.
-- Rate-limit authentication endpoints when they are added.
 
 ## Verification
 

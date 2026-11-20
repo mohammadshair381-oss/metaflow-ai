@@ -61,16 +61,18 @@ Deep links and browser refreshes on nested paths work because the server answers
 
 ### Session state and route guards
 
-`contexts/` holds an `AuthState`: `unavailable | loading | anonymous | authenticated`.
+`AuthProvider` (`contexts/`) restores the session on load with `GET /api/auth/me`. The browser sends the HTTP-only cookie automatically; JavaScript never sees the token. It exposes `state` plus `login`, `register`, `logout` and `retry`. The state is one of:
 
-| State           | `ProtectedRoute`                            | `GuestRoute` (`/login`, `/register`)                                       |
-| --------------- | ------------------------------------------- | -------------------------------------------------------------------------- |
-| `unavailable`   | Renders, with a "Preview mode" notice       | Renders                                                                    |
-| `loading`       | Shows "Checking your session…"              | Renders                                                                    |
-| `anonymous`     | Redirects to `/login`, remembering the path | Renders                                                                    |
-| `authenticated` | Renders                                     | Redirects to the remembered path or `/dashboard`; never to an external URL |
+| State           | Meaning                                          | `ProtectedRoute`                             | `GuestRoute` (`/login`, `/register`)                                       |
+| --------------- | ------------------------------------------------ | -------------------------------------------- | -------------------------------------------------------------------------- |
+| `loading`       | Session check in flight                          | "Checking your session…"                     | "Loading…" (no flash of the form)                                          |
+| `anonymous`     | `/me` answered 401                               | Redirects to `/login`, remembering the path  | Renders the form                                                           |
+| `authenticated` | `/me`, login or registration succeeded           | Renders                                      | Redirects to the remembered path or `/dashboard`; never to an external URL |
+| `error`         | Server unreachable: the session state is unknown | "Can't reach MetaFlow AI" with **Try again** | Renders the form with a warning                                            |
 
-Sign-in is not built, so the provider always supplies `unavailable`. The sign-in milestone replaces that constant with a cookie-based session check. The guards only shape the UI; **the API authorizes every request on its own**.
+`error` is deliberately separate from `anonymous`, so an outage never looks like being signed out. The UI changes state only after the server confirms: a failed sign-out keeps the user signed in and says so. The guards only shape the UI; **the API authorizes every request on its own**.
+
+Forms (`pages/login-page.tsx`, `pages/register-page.tsx`) validate with the same Zod schemas the API uses (`@metaflow/shared`) before sending. Server errors are mapped back onto fields (`VALIDATION_ERROR` details, `EMAIL_TAKEN`) or shown as one form-level message (`INVALID_CREDENTIALS`, `RATE_LIMITED`).
 
 ### API access
 
@@ -105,16 +107,20 @@ Only `VITE_*` variables are embedded in the bundle, and all of them are public. 
 
 ```
 routes/        URL → controller mapping only
-controllers/   HTTP adapter: parse input (validators/), call a service, set status/headers
-services/      Business logic. No Express types. Unit-testable with fakes
-models/        Mongoose schemas and indexes (none yet; first models arrive with authentication)
+controllers/   HTTP adapter: parse input (validators/), call a service, set status/headers/cookies
+services/      Business logic. No Express types. Throws AppError
+repositories/  Data-access interfaces (auth-repositories.ts) and their Mongoose implementation
+models/        Mongoose schemas and indexes (User, Session)
 validators/    Zod request schemas and parseRequest()
-middleware/    Cross-cutting HTTP concerns
-config/        Environment, database connection, CORS, app info
-utils/         Errors, logging, redaction
+middleware/    Cross-cutting HTTP concerns (auth, origin check, rate limits, errors, logging)
+config/        Environment, database connection, CORS, session cookie, app info
+utils/         Errors, logging, redaction, password hashing, session tokens, cookie parsing
+scripts/       Operator commands (db:indexes)
 ```
 
-`app.ts` builds the Express app from injected dependencies and has no side effects. `server.ts` loads configuration, connects to MongoDB, listens, and handles shutdown.
+`app.ts` builds the Express app from injected dependencies and has no side effects. `server.ts` loads configuration, connects to MongoDB, wires the Mongoose repositories, listens, and handles shutdown.
+
+Services depend on **repository interfaces**, not on Mongoose. The server injects the MongoDB implementation; tests inject an in-memory one (`backend/test/support/`), so the suite needs no database. A separate suite (`auth-mongo.test.ts`) runs the MongoDB repositories against a real database when `MONGODB_TEST_URI` is set.
 
 ### Request pipeline
 
@@ -124,10 +130,11 @@ Order in `app.ts`:
 2. `requestLogger`: one JSON line per request: method, path (never the query string), status, duration. Health checks log at `debug`.
 3. `helmet`: security headers.
 4. `cors`: explicit origin allowlist with credentials. Unlisted origins get no CORS headers.
-5. `express.json` with a 100 KB limit.
-6. Routes under `/api`.
-7. `notFoundHandler` → `NOT_FOUND`.
-8. `errorHandler`: turns every error into the shared envelope.
+5. `requireTrustedOrigin`: state-changing requests (POST/PUT/PATCH/DELETE) that carry an `Origin` header must come from `CORS_ORIGINS`, otherwise 403 `FORBIDDEN` (CSRF defence).
+6. `express.json` with a 100 KB limit.
+7. Routes under `/api`. Auth routes add `Cache-Control: no-store`, rate limits, and `requireAuth` where needed.
+8. `notFoundHandler` → `NOT_FOUND`.
+9. `errorHandler`: turns every error into the shared envelope.
 
 ### Error contract
 
@@ -146,13 +153,19 @@ Every non-2xx JSON response has this shape (`apiErrorResponseSchema` in `shared/
 }
 ```
 
-| Code                | HTTP | Raised by                                    |
-| ------------------- | ---- | -------------------------------------------- |
-| `BAD_REQUEST`       | 400  | Malformed JSON body                          |
-| `VALIDATION_ERROR`  | 400  | `parseRequest()` / Zod                       |
-| `NOT_FOUND`         | 404  | Unknown route                                |
-| `PAYLOAD_TOO_LARGE` | 413  | Body above the limit                         |
-| `INTERNAL_ERROR`    | 500  | Anything unexpected; details are logged only |
+| Code                  | HTTP | Raised by                                                                   |
+| --------------------- | ---- | --------------------------------------------------------------------------- |
+| `BAD_REQUEST`         | 400  | Malformed JSON body                                                         |
+| `VALIDATION_ERROR`    | 400  | `parseRequest()` / Zod                                                      |
+| `UNAUTHENTICATED`     | 401  | No valid session (missing, expired, revoked, or the user is not active)     |
+| `INVALID_CREDENTIALS` | 401  | Login with a wrong email or password (same message for both)                |
+| `FORBIDDEN`           | 403  | State-changing request from an origin not in `CORS_ORIGINS`                 |
+| `NOT_FOUND`           | 404  | Unknown route                                                               |
+| `EMAIL_TAKEN`         | 409  | Registration with an email that already has an account                      |
+| `PAYLOAD_TOO_LARGE`   | 413  | Body above the limit                                                        |
+| `RATE_LIMITED`        | 429  | Too many register/login attempts                                            |
+| `INTERNAL_ERROR`      | 500  | Anything unexpected; details are logged only                                |
+| `SERVICE_UNAVAILABLE` | 503  | MongoDB unreachable (connection/selection errors), instead of a generic 500 |
 
 Services throw `AppError`. Messages of unexpected errors and stack traces never reach clients.
 
@@ -175,27 +188,63 @@ Readiness reports the database as `up`, `down` or `not_configured` (no `MONGODB_
 
 - **Connection:** `config/database.ts` wraps Mongoose's default connection. The server starts listening first, then connects in the background with exponential backoff (1 s → 30 s). This keeps liveness available during an Atlas outage.
 - **Fail fast:** `bufferCommands` is off, so queries fail immediately while disconnected instead of hanging.
-- **Indexes are never built automatically in production** (`autoIndex` and `autoCreate` are on only outside production). Procedure once models exist:
-  1. Declare indexes in the schema (unique and compound indexes included).
-  2. Review index changes in the pull request like a migration.
-  3. Apply them deliberately with a one-off script that calls `Model.createIndexes()` for the changed models, run against production by an operator, ideally at low traffic.
-  4. Never run `syncIndexes()` against production unreviewed: it **drops** indexes that are not in the schema.
+- **Collections and indexes** (declared in `backend/src/models/`):
 
-  The script will be added together with the first models.
+  | Collection | Index                         | Purpose                                                                  |
+  | ---------- | ----------------------------- | ------------------------------------------------------------------------ |
+  | `users`    | `users_email_unique` (unique) | One account per normalized email; makes duplicate registration race-safe |
+  | `sessions` | `sessions_token_hash_unique`  | Session lookup by token hash                                             |
+  | `sessions` | `sessions_user_revoked`       | "Sign out everywhere" (`userId` + `revokedAt`)                           |
+  | `sessions` | `sessions_expires_ttl` (TTL)  | MongoDB deletes sessions once `expiresAt` has passed                     |
 
-## Authentication and sessions (planned design)
+- **Indexes are never built automatically in production** (`autoIndex` and `autoCreate` are on only outside production). The procedure:
+  1. Declare indexes in the schema and review index changes in the pull request like a migration.
+  2. Check what is missing, read-only: `pnpm --filter @metaflow/backend db:indexes` (uses `MONGODB_URI`; prints only the database name).
+  3. Create the missing ones deliberately: `pnpm --filter @metaflow/backend db:indexes --apply`. It uses `Model.createIndexes()`, which only adds.
+  4. Never run `syncIndexes()` against production: it **drops** indexes that are not in the schema.
 
-Not implemented in this milestone. This is the agreed design for the next one.
+  **Run step 3 against the production database before the first real sign-up.** Without the unique email index, two simultaneous registrations could create duplicate accounts.
 
-- **Server-managed sessions**, not JWTs in browser storage.
-- **Token:** 32 random bytes from `crypto.randomBytes`, base64url-encoded, sent to the browser once in a cookie.
-- **Storage:** MongoDB `sessions` collection stores only the **SHA-256 hash** of the token, with `userId`, `createdAt`, `lastSeenAt` and `expiresAt`. A unique index on the hash; a TTL index on `expiresAt` removes expired sessions.
-- **Lifetime:** idle timeout plus an absolute maximum lifetime. The token is rotated on login.
-- **Revocation:** logout deletes the session. A password change deletes all of the user's sessions.
-- **Cookie:** `HttpOnly`, `Secure` in production, `Path=/`, `SameSite=Lax` once same-site domains are in place (see below). Use the `__Host-` prefix when the cookie is host-only.
-- **CORS:** explicit origins with `credentials: true`; never a wildcard.
-- **CSRF:** `SameSite` plus an `Origin` header check against `CORS_ORIGINS` for every state-changing method.
-- **Passwords:** a slow, salted hash (scrypt or Argon2id) and rate-limited login, without revealing whether an email exists.
+## Authentication and sessions
+
+Server-managed sessions in HTTP-only cookies. No JWTs, and nothing in `localStorage`.
+
+**Endpoints** (`/api/auth`, all responses `Cache-Control: no-store`):
+
+| Method & path      | Auth     | Result                                                                         |
+| ------------------ | -------- | ------------------------------------------------------------------------------ |
+| `POST /register`   | –        | 201 `{ user }` and a session cookie. 409 `EMAIL_TAKEN`, 400 `VALIDATION_ERROR` |
+| `POST /login`      | –        | 200 `{ user }` and a new session cookie. 401 `INVALID_CREDENTIALS` (generic)   |
+| `POST /logout`     | optional | 204; revokes the current session (if any) and clears the cookie. Idempotent    |
+| `POST /logout-all` | required | 204; revokes **every** session of the signed-in user ("sign out everywhere")   |
+| `GET /me`          | required | 200 `{ user }`, or 401 `UNAUTHENTICATED`                                       |
+
+`user` is `{ id, name, email, status, emailVerified, createdAt }` (`authUserSchema` in `shared/`). Password data never appears in any response: repositories return user records without a hash field, except for the single credentials lookup inside the login service.
+
+**Passwords**
+
+- Node.js `scrypt` with N=2^15, r=8, p=1 (32 MiB per hash), a 16-byte random salt and a 64-byte key. Stored as `scrypt$N$r$p$salt$key`, so the parameters can be raised later.
+- NFKC Unicode normalization; comparison with `timingSafeEqual`. Malformed or out-of-bounds stored hashes are rejected without throwing.
+- Policy (shared by API and forms): 10–128 characters, not a known common password, at least 3 distinct characters. Length plus a blocklist, as in NIST SP 800-63B; no composition rules.
+
+**Sessions**
+
+- **Token:** 32 random bytes (`crypto.randomBytes`), base64url. Sent only in the cookie.
+- **Storage:** the `sessions` collection stores only the SHA-256 hash of the token (the schema rejects anything that isn't a 64-character hex digest), plus `userId`, `expiresAt`, `revokedAt`, `revokedReason` (`logout`, `logout_all` or `replaced`) and `createdAt`.
+- **Lifetime:** absolute, `SESSION_TTL_DAYS` (default 7). The cookie expires at the same moment. There is no idle timeout and no sliding renewal yet.
+- **Validation** (every protected request): well-formed token → session found → not revoked → not expired → user exists and is `active`. Any failure is 401, and a stale cookie is cleared.
+- **Revocation:** logout revokes the current session, logout-all revokes all of the user's sessions, and signing in from a browser that already holds a session **replaces** it (no session fixation). Revoked sessions stay until their TTL expiry, for audit.
+
+**Cookie:** `HttpOnly`, `Path=/`, and `SameSite` from `SESSION_COOKIE_SAMESITE` (default `Lax`). In production it is also `Secure` and named `__Host-metaflow_session` (the browser then enforces Secure, Path=/ and no Domain). In development it is named `metaflow_session` and not Secure (plain-http localhost).
+
+**Defences**
+
+- **Account enumeration:** login answers "Incorrect email or password" for both unknown emails and wrong passwords, and an unknown email still runs a full scrypt check against a decoy hash, so timing matches. Suspended accounts get the same answer. Registration does reveal a taken email (409); there is no email system yet that could notify the owner instead. The rate limits bound how fast this can be probed.
+- **Brute force:** per client IP, 30 register/login requests per 15 minutes. Per account, 10 **failed** logins per 15 minutes (successful ones don't count). Both answer 429 `RATE_LIMITED`. The counters are in memory: correct for one backend instance; several instances will need a shared store (Redis).
+- **CSRF:** `SameSite` cookies plus the `Origin` check on every state-changing request.
+- **Trust:** identity comes only from the server-side session (`res.locals.auth`). IDs in request bodies or headers are never used for authorization (tested: `logout-all` ignores a `userId` in the body).
+
+**Not built yet:** email verification (the `emailVerifiedAt` field exists, with no flow), password reset and password change, a list of active sessions, account deletion.
 
 ## Cross-site cookies and custom domains
 
@@ -216,7 +265,15 @@ Both are then the **same site** (`yourdomain.com`). The session cookie is first-
 
 Interim alternative (not implemented): add a Vercel rewrite from `/api/:path*` to the Render URL in `frontend/vercel.json` and leave `VITE_API_BASE_URL` empty, so the browser sees a single origin, as it does with the local dev proxy (the `VITE_API_BASE_URL` requirement in `vite.config.ts` would have to be relaxed for that). This adds a network hop and couples the API to Vercel's proxy limits, so it is a stopgap, not the target architecture.
 
-The health checks in this milestone use no cookies, so they work on the default domains today.
+**How this maps to configuration (authentication is built; the production setup is not decided yet):**
+
+| Setup                                              | `SESSION_COOKIE_SAMESITE` | Works in                                                                      |
+| -------------------------------------------------- | ------------------------- | ----------------------------------------------------------------------------- |
+| Local development (Vite proxy or localhost ports)  | `lax` (default)           | All browsers: same site                                                       |
+| Custom domain: `app.` and `api.` of one domain     | `lax` (default)           | All browsers: **recommended**                                                 |
+| Default domains: `*.vercel.app` → `*.onrender.com` | `none`                    | Unreliable: works in Chrome; fails in Safari, Brave and Firefox's strict mode |
+
+The backend refuses `none` outside production, because browsers reject `SameSite=None` without `Secure`. The health checks use no cookies, so they work on any setup.
 
 ## Background worker (later)
 

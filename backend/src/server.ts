@@ -4,6 +4,7 @@ import { createApp } from './app';
 import { createDatabase } from './config/database';
 import { EnvValidationError, parseEnv, type Env } from './config/env';
 import { createMongoAuthRepositories } from './repositories/mongo-auth-repositories';
+import { createMongoWorkspaceRepository } from './repositories/mongo-workspace-repositories';
 import { createLogger } from './utils/logger';
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
@@ -44,6 +45,7 @@ function main(): void {
     database,
     logger,
     authRepositories: createMongoAuthRepositories(),
+    workspaceRepository: createMongoWorkspaceRepository(),
   });
   const server = createServer(app);
   const shutdownController = new AbortController();

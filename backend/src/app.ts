@@ -9,6 +9,7 @@ import type { Env } from './config/env';
 import { createSessionCookieConfig } from './config/session-cookie';
 import { createAuthController } from './controllers/auth.controller';
 import { createHealthController } from './controllers/health.controller';
+import { createWorkspaceController } from './controllers/workspace.controller';
 import { createRequireAuth } from './middleware/authenticate';
 import { createErrorHandler } from './middleware/error-handler';
 import { notFoundHandler } from './middleware/not-found';
@@ -17,9 +18,11 @@ import { requestId } from './middleware/request-id';
 import { requestLogger } from './middleware/request-logger';
 import { requireTrustedOrigin } from './middleware/trusted-origin';
 import type { AuthRepositories } from './repositories/auth-repositories';
+import type { WorkspaceRepository } from './repositories/workspace-repositories';
 import { createApiRouter } from './routes';
 import { createAuthService } from './services/auth.service';
 import { createHealthService } from './services/health.service';
+import { createWorkspaceService } from './services/workspace.service';
 import type { Logger } from './utils/logger';
 
 export interface AppDependencies {
@@ -28,6 +31,7 @@ export interface AppDependencies {
   logger: Logger;
   /** MongoDB-backed in the server; in-memory in tests. */
   authRepositories: AuthRepositories;
+  workspaceRepository: WorkspaceRepository;
   /** Override only in tests; production uses DEFAULT_AUTH_RATE_LIMITS. */
   authRateLimits?: AuthRateLimits;
   now?: () => Date;
@@ -45,6 +49,7 @@ export function createApp({
   database,
   logger,
   authRepositories,
+  workspaceRepository,
   authRateLimits,
   now,
 }: AppDependencies): Express {
@@ -74,15 +79,19 @@ export function createApp({
     now,
   });
 
+  const requireAuth = createRequireAuth(authService, sessionCookie);
+  const workspaceService = createWorkspaceService({ repository: workspaceRepository, now });
+
   app.use(
     API_PREFIX,
     createApiRouter({
       health: createHealthController(healthService),
       auth: {
         controller: createAuthController(authService, sessionCookie),
-        requireAuth: createRequireAuth(authService, sessionCookie),
+        requireAuth,
         limiters: createAuthRateLimiters(authRateLimits),
       },
+      workspaces: { controller: createWorkspaceController(workspaceService), requireAuth },
     }),
   );
 

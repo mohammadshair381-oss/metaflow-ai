@@ -49,6 +49,20 @@ export const appRoutes: RouteObject[] = [
                   return { Component: DashboardPage };
                 },
               },
+              {
+                path: '/workspaces/new',
+                lazy: async () => {
+                  const { WorkspaceNewPage } = await import('@/pages/workspace-new-page');
+                  return { Component: WorkspaceNewPage };
+                },
+              },
+              {
+                path: '/settings',
+                lazy: async () => {
+                  const { WorkspaceSettingsPage } = await import('@/pages/workspace-settings-page');
+                  return { Component: WorkspaceSettingsPage };
+                },
+              },
               ...PLANNED_MODULES.map((module): RouteObject => ({
                 path: module.path,
                 lazy: async () => {

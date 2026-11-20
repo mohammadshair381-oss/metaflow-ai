@@ -15,7 +15,14 @@ export const API_ROUTES = {
   authLogout: `${API_PREFIX}/auth/logout`,
   authLogoutAll: `${API_PREFIX}/auth/logout-all`,
   authMe: `${API_PREFIX}/auth/me`,
+  workspaces: `${API_PREFIX}/workspaces`,
 } as const;
+
+/** Paths below one workspace. The server checks membership on every one of them. */
+export const workspaceRoutes = (workspaceId: string) => {
+  const base = `${API_ROUTES.workspaces}/${encodeURIComponent(workspaceId)}`;
+  return { detail: base, archive: `${base}/archive`, members: `${base}/members` } as const;
+};
 
 /** Header used to correlate a request across frontend, backend and logs. */
 export const REQUEST_ID_HEADER = 'X-Request-Id';

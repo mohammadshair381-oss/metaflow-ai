@@ -7,10 +7,10 @@ const BUILT_IN_THIS_MILESTONE = [
   'MongoDB readiness reporting',
   'Credentialed CORS between web app and API',
   'Accounts, sign-in and secure sessions',
+  'Workspaces with owner and staff roles',
 ];
 
 const COMING_NEXT = [
-  'Workspaces, team roles and permissions',
   'Facebook Page and Instagram connections',
   'AI Studio for captions and hashtags',
   'Scheduling, approvals and publishing',
@@ -21,14 +21,12 @@ export function MilestoneCard() {
     <Card>
       <CardHeader>
         <CardTitle>Build progress</CardTitle>
-        <CardDescription>
-          Product features arrive milestone by milestone once this foundation is deployed.
-        </CardDescription>
+        <CardDescription>Product features arrive milestone by milestone.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-5 text-sm">
         <div className="flex flex-col gap-2">
           <h3 className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-            Foundation
+            Built
           </h3>
           <ul className="flex flex-col gap-2">
             {BUILT_IN_THIS_MILESTONE.map((item) => (

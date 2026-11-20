@@ -37,7 +37,7 @@ export interface NavigationSection {
 }
 
 const MILESTONES = {
-  workspaces: { number: 3, name: 'Workspaces, team roles and permissions' },
+  workspaces: { number: 3, name: 'Team invitations and role management' },
   meta: { number: 4, name: 'Facebook and Instagram connection' },
   aiInfrastructure: { number: 5, name: 'AI infrastructure and brand profiles' },
   content: { number: 6, name: 'AI Studio and content management' },
@@ -107,7 +107,7 @@ export const PLANNED_MODULES: PlannedModule[] = [
     label: 'Team',
     icon: Users,
     description:
-      'Invite teammates and assign roles: owner, admin, editor, approver or viewer, each with its own permissions.',
+      'Invite teammates as staff, change roles and remove members. Owners keep full control of the workspace.',
     milestone: MILESTONES.workspaces,
   },
   {
@@ -116,13 +116,6 @@ export const PLANNED_MODULES: PlannedModule[] = [
     icon: CreditCard,
     description: 'Choose a subscription plan, track usage against its limits and manage payments.',
     milestone: MILESTONES.growth,
-  },
-  {
-    path: '/settings',
-    label: 'Settings',
-    icon: Settings,
-    description: 'Manage workspace details, defaults and your account preferences.',
-    milestone: MILESTONES.workspaces,
   },
 ];
 
@@ -152,6 +145,9 @@ export const NAVIGATION: NavigationSection[] = [
   },
   {
     title: 'Organization',
-    items: plannedItems(['/team', '/billing', '/settings']),
+    items: [
+      ...plannedItems(['/team', '/billing']),
+      { path: '/settings', label: 'Workspace settings', icon: Settings, planned: false },
+    ],
   },
 ];

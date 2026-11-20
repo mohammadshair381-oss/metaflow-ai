@@ -14,10 +14,16 @@ import { createDatabase } from '../src/config/database';
 import { EnvValidationError, parseEnv } from '../src/config/env';
 import { SessionModel } from '../src/models/session.model';
 import { UserModel } from '../src/models/user.model';
+import { WorkspaceMembershipModel, WorkspaceModel } from '../src/models/workspace.model';
 import { createLogger } from '../src/utils/logger';
 import { planIndexes, type ExistingIndex } from './index-plan';
 
-const MODELS: Model<never>[] = [UserModel, SessionModel] as unknown as Model<never>[];
+const MODELS: Model<never>[] = [
+  UserModel,
+  SessionModel,
+  WorkspaceModel,
+  WorkspaceMembershipModel,
+] as unknown as Model<never>[];
 const out = (line: string) => process.stdout.write(`${line}\n`);
 
 async function existingIndexes(model: Model<never>): Promise<ExistingIndex[]> {

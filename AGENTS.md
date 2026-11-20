@@ -6,7 +6,7 @@ Guidance for AI agents and contributors working in this repository. Read this fi
 
 **MetaFlow AI**: a multi-tenant SaaS for AI-assisted social media management. Users connect Facebook Pages and Instagram Professional (Business/Creator) accounts, generate content with AI, and publish it with manual approval or automatically.
 
-**Current milestone: 2 — accounts and authentication.** Built: health checks, the dashboard shell, and registration/login/logout with server-managed sessions. The owner postponed the production deployment of milestone 1 and approved starting this one. Do not start the next milestone (workspaces) until the owner approves it.
+**Current milestone: 3 — workspaces.** Built: health checks, the dashboard shell, registration/login/logout with server-managed sessions, and workspaces with owner/staff roles (create, switch, business profile, members list, archive). The owner approved a 10-day MVP plan (workspaces → Meta connection → AI Studio → content → calendar and scheduling → publishing → automation → analytics and team → billing and super-admin). Production deployment stays postponed until the owner approves launch.
 
 ## Ground rules
 
@@ -47,7 +47,7 @@ Guidance for AI agents and contributors working in this repository. Read this fi
 - **Logging:** use the injected `Logger`; `console` is lint-banned. Never log bodies, query strings, cookies, tokens or connection strings.
 - **Database:** use the connection in `config/database.ts`. Models declare their indexes; production indexes are applied manually with `pnpm --filter @metaflow/backend db:indexes --apply` (see `docs/architecture.md`, "Database"). Never call `syncIndexes()` or run destructive operations against production.
 - **Tests and data:** never point tests at the application database. Auth tests use in-memory repositories; MongoDB suites run only with `MONGODB_TEST_URI` and refuse database names without `test`.
-- **Tenant isolation (from the workspace milestone on):** every query on workspace-owned data must be scoped by a workspace ID that the server resolved from the authenticated user's membership. A workspace ID sent by the client is only a lookup key, never proof of access. Enforce roles in services, not only in routes or the UI.
+- **Tenant isolation:** every workspace-scoped operation starts with `workspaceService.requireAccess(userId, workspaceId, { role? })`, which answers `NOT_FOUND` to non-members and `PERMISSION_DENIED` to members without the role. Every query on workspace-owned data must be scoped by the workspace ID it returns. A workspace ID sent by the client is only a lookup key, never proof of access. Enforce roles in services, not only in routes or the UI.
 - **Async:** Express 5 forwards rejected promises to the error handler; do not add wrappers. `no-floating-promises` is an error.
 
 ## Frontend conventions

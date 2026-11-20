@@ -160,8 +160,10 @@ Every non-2xx JSON response has this shape (`apiErrorResponseSchema` in `shared/
 | `UNAUTHENTICATED`     | 401  | No valid session (missing, expired, revoked, or the user is not active)     |
 | `INVALID_CREDENTIALS` | 401  | Login with a wrong email or password (same message for both)                |
 | `FORBIDDEN`           | 403  | State-changing request from an origin not in `CORS_ORIGINS`                 |
+| `PERMISSION_DENIED`   | 403  | Signed in, but the workspace role does not allow the action                 |
 | `NOT_FOUND`           | 404  | Unknown route                                                               |
 | `EMAIL_TAKEN`         | 409  | Registration with an email that already has an account                      |
+| `LIMIT_REACHED`       | 409  | A per-user limit would be exceeded (owned workspaces)                       |
 | `PAYLOAD_TOO_LARGE`   | 413  | Body above the limit                                                        |
 | `RATE_LIMITED`        | 429  | Too many register/login attempts                                            |
 | `INTERNAL_ERROR`      | 500  | Anything unexpected; details are logged only                                |
@@ -190,12 +192,14 @@ Readiness reports the database as `up`, `down` or `not_configured` (no `MONGODB_
 - **Fail fast:** `bufferCommands` is off, so queries fail immediately while disconnected instead of hanging.
 - **Collections and indexes** (declared in `backend/src/models/`):
 
-  | Collection | Index                         | Purpose                                                                  |
-  | ---------- | ----------------------------- | ------------------------------------------------------------------------ |
-  | `users`    | `users_email_unique` (unique) | One account per normalized email; makes duplicate registration race-safe |
-  | `sessions` | `sessions_token_hash_unique`  | Session lookup by token hash                                             |
-  | `sessions` | `sessions_user_revoked`       | "Sign out everywhere" (`userId` + `revokedAt`)                           |
-  | `sessions` | `sessions_expires_ttl` (TTL)  | MongoDB deletes sessions once `expiresAt` has passed                     |
+  | Collection              | Index                               | Purpose                                                                  |
+  | ----------------------- | ----------------------------------- | ------------------------------------------------------------------------ |
+  | `users`                 | `users_email_unique` (unique)       | One account per normalized email; makes duplicate registration race-safe |
+  | `sessions`              | `sessions_token_hash_unique`        | Session lookup by token hash                                             |
+  | `sessions`              | `sessions_user_revoked`             | "Sign out everywhere" (`userId` + `revokedAt`)                           |
+  | `sessions`              | `sessions_expires_ttl` (TTL)        | MongoDB deletes sessions once `expiresAt` has passed                     |
+  | `workspace_memberships` | `memberships_workspace_user_unique` | One membership per user and workspace; member lookups                    |
+  | `workspace_memberships` | `memberships_user_role`             | A user's workspaces and owned-workspace count                            |
 
 - **Indexes are never built automatically in production** (`autoIndex` and `autoCreate` are on only outside production). The procedure:
   1. Declare indexes in the schema and review index changes in the pull request like a migration.
@@ -245,6 +249,38 @@ Server-managed sessions in HTTP-only cookies. No JWTs, and nothing in `localStor
 - **Trust:** identity comes only from the server-side session (`res.locals.auth`). IDs in request bodies or headers are never used for authorization (tested: `logout-all` ignores a `userId` in the body).
 
 **Not built yet:** email verification (the `emailVerifiedAt` field exists, with no flow), password reset and password change, a list of active sessions, account deletion.
+
+## Workspaces and tenant isolation
+
+A workspace is one business or brand. Everything a customer creates later (social accounts, posts, media, automations) belongs to exactly one workspace.
+
+**Data:** `workspaces` (name, description, category, IANA `timezone`, `defaultLanguage`, `status`, `archivedAt`, `createdBy`) and `workspace_memberships` (`workspaceId`, `userId`, `role`). Access is decided only by memberships; `createdBy` is an audit field.
+
+**Roles:** `owner` (edit the profile, archive; later billing, members and social accounts) and `staff` (use the workspace; no owner-only actions). Platform administration will be a separate concept on the user, never a workspace role.
+
+**The gate:** `workspaceService.requireAccess(userId, workspaceId, { role? })` is the single entry point for workspace-scoped work, and later modules must call it before touching workspace data.
+
+- The user ID always comes from the session; the workspace ID from the URL is only a lookup key.
+- Not a member, unknown ID or archived workspace → 404 `NOT_FOUND` with one identical message, so IDs cannot be probed.
+- Member without the required role → 403 `PERMISSION_DENIED`.
+- IDs are validated as 24-hex strings before any lookup. Update bodies are strict: unknown fields such as `role`, `status` or another workspace's ID are rejected.
+
+**Endpoints** (`/api/workspaces`, session required, `Cache-Control: no-store`):
+
+| Method & path                | Who    | Result                                                                 |
+| ---------------------------- | ------ | ---------------------------------------------------------------------- |
+| `GET /`                      | user   | Active workspaces the caller belongs to, each with the caller's `role` |
+| `POST /`                     | user   | 201; the caller becomes owner. 409 `LIMIT_REACHED` above 10 owned      |
+| `GET /:workspaceId`          | member | The workspace                                                          |
+| `PATCH /:workspaceId`        | owner  | Updates only the fields sent                                           |
+| `POST /:workspaceId/archive` | owner  | 204. Body `{ confirmName }` must equal the workspace name              |
+| `GET /:workspaceId/members`  | member | Members with name, email, role and join date                           |
+
+**Archiving** hides the workspace from every member and makes it read-only; nothing is deleted. There is no restore or permanent delete yet.
+
+**Frontend:** `WorkspaceProvider` (inside the dashboard layout) loads the list and tracks the active workspace; `WorkspaceGate` renders pages only once one is active and asks a user without any to create the first. The active workspace ID is remembered per user in `localStorage`; it is a display preference, not a credential.
+
+**Not built yet:** logo upload (needs the media storage layer), brand voice (AI milestone), invitations and role changes (team milestone), plan-based workspace limits (billing milestone; the limit of 10 is a fixed safety cap until then).
 
 ## Cross-site cookies and custom domains
 

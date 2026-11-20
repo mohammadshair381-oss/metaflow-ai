@@ -2,8 +2,8 @@
 
 AI-powered social media automation SaaS. Businesses, creators and agencies will connect Facebook Pages and Instagram Professional accounts, generate content with AI, and schedule or auto-publish it.
 
-> **Status: Milestone 2 — accounts and authentication (built and tested locally; not deployed).**
-> Users can register, sign in, stay signed in across reloads and sign out, with server-managed sessions in HTTP-only cookies. The deployment foundation (milestone 1) is ready but its production deployment is postponed. Workspaces, Meta connection, AI and publishing come in later milestones.
+> **Status: Milestone 3 — workspaces (built and tested locally; not deployed).**
+> Users can register and sign in, create workspaces for their businesses, switch between them, edit the business profile and archive a workspace. Each workspace has an owner and staff, and its data is isolated from other workspaces. Meta connection, AI and publishing come in later milestones; production deployment is postponed.
 
 ## Architecture
 
@@ -72,14 +72,16 @@ To use a database or change defaults, copy the relevant section of [`.env.exampl
 
 ### Routes
 
-| Path                                                                                                                        | Page                                                                          |
-| --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `/`                                                                                                                         | Public landing page                                                           |
-| `/login`, `/register`                                                                                                       | Sign-in and registration forms                                                |
-| `/dashboard`                                                                                                                | Live backend connection status and build progress (signed in)                 |
-| `/accounts`, `/ai-studio`, `/calendar`, `/posts`, `/automations`, `/analytics`, `/brands`, `/team`, `/billing`, `/settings` | Honest empty states: what each module will do and which milestone delivers it |
+| Path                                                                                                           | Page                                                                          |
+| -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `/`                                                                                                            | Public landing page                                                           |
+| `/login`, `/register`                                                                                          | Sign-in and registration forms                                                |
+| `/dashboard`                                                                                                   | Active workspace overview, backend connection status and build progress       |
+| `/workspaces/new`                                                                                              | Create another workspace                                                      |
+| `/settings`                                                                                                    | Workspace settings: business profile, members, archive (owner only)           |
+| `/accounts`, `/ai-studio`, `/calendar`, `/posts`, `/automations`, `/analytics`, `/brands`, `/team`, `/billing` | Honest empty states: what each module will do and which milestone delivers it |
 
-Signed-in routes sit behind `ProtectedRoute`: visitors are sent to `/login` and returned to the page they wanted after signing in. The session survives reloads (it is restored from the HTTP-only cookie).
+Signed-in routes sit behind `ProtectedRoute`: visitors are sent to `/login` and returned to the page they wanted after signing in. The session survives reloads (it is restored from the HTTP-only cookie). A signed-in user without a workspace is asked to create one first.
 
 ### Scripts
 
@@ -161,13 +163,14 @@ Short version: backend on Render via `render.yaml`; frontend on Vercel with Root
 - Logs never contain request bodies, query strings, cookies or connection-string credentials.
 - Passwords: scrypt (32 MiB, per-user salt). Sessions: random 256-bit tokens in `HttpOnly` cookies (`Secure` and `__Host-` in production); only SHA-256 hashes are stored; sessions expire and can be revoked.
 - Login gives one generic error for unknown emails and wrong passwords, with matching timing; auth endpoints are rate-limited per IP and per account; state-changing requests from unlisted origins are refused (CSRF).
+- Workspaces are isolated: the API resolves access from the signed-in user's membership on every request, answers 404 for workspaces the user does not belong to, and limits editing and archiving to the owner.
 - Before deploying sign-in, put both apps on one custom domain: cookies across `vercel.app` and `onrender.com` are third-party and unreliable. See [docs/architecture.md](docs/architecture.md#cross-site-cookies-and-custom-domains).
 
 ## Roadmap
 
 1. Deployment foundation (built; production deployment postponed)
-2. **Accounts, sign-in and server-managed sessions** ← current
-3. Workspaces, membership and role-based authorization
+2. Accounts, sign-in and server-managed sessions (built)
+3. **Workspaces, membership and owner/staff roles** ← current (team invitations come with milestone 8)
 4. Facebook and Instagram connection (Meta OAuth)
 5. AI infrastructure and brand profiles
 6. AI Studio and content management

@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider, type InitialEntry } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthContext, type AuthContextValue, type AuthState } from '@/contexts/auth-context';
-import { SIGNED_IN, authValue } from '@/test/auth-test-utils';
+import { SIGNED_IN, authValue, mockApi } from '@/test/auth-test-utils';
 import { PLANNED_MODULES } from './navigation';
 import { appRoutes } from './router';
 
@@ -21,11 +21,8 @@ function renderAt(entry: InitialEntry, auth: AuthState | AuthContextValue = SIGN
 }
 
 beforeEach(() => {
-  // The dashboard checks the backend on mount; keep those requests pending in route tests.
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(() => new Promise<Response>(() => {})),
-  );
+  // The user has one workspace; the dashboard's backend checks stay pending in route tests.
+  mockApi({});
   // jsdom does not implement scrolling; ScrollRestoration calls it on navigation.
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
 });

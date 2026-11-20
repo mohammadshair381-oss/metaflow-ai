@@ -13,8 +13,12 @@ export const ERROR_CODES = [
   'INVALID_CREDENTIALS',
   /** State-changing request from an origin that is not allowed. */
   'FORBIDDEN',
+  /** Signed in, but the caller's role does not allow the action. */
+  'PERMISSION_DENIED',
   'NOT_FOUND',
   'EMAIL_TAKEN',
+  /** A per-user or per-plan limit would be exceeded. */
+  'LIMIT_REACHED',
   'PAYLOAD_TOO_LARGE',
   'RATE_LIMITED',
   'INTERNAL_ERROR',

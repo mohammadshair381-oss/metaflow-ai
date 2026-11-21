@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider, type InitialEntry } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthContext, type AuthContextValue, type AuthState } from '@/contexts/auth-context';
@@ -118,7 +118,8 @@ describe('routes', () => {
   it('sets the document title per page', async () => {
     renderAt('/calendar');
     await screen.findByRole('heading', { level: 1, name: 'Content Calendar' });
-    expect(document.title).toBe('Content Calendar · MetaFlow AI');
+    // The page sets the title in an effect that runs just after it renders.
+    await waitFor(() => expect(document.title).toBe('Content Calendar · MetaFlow AI'));
   });
 });
 

@@ -5,12 +5,14 @@ import type { AiProvider } from '../src/integrations/ai/ai-provider';
 import type { MetaClient } from '../src/integrations/meta/meta-client';
 import type { AiRepositories } from '../src/repositories/ai-repositories';
 import type { AuthRepositories } from '../src/repositories/auth-repositories';
+import type { MediaRepository } from '../src/repositories/media-repositories';
 import type { PostRepository } from '../src/repositories/post-repositories';
 import type { SocialRepositories } from '../src/repositories/social-repositories';
 import type { WorkspaceRepository } from '../src/repositories/workspace-repositories';
 import { createLogger, type Logger } from '../src/utils/logger';
 import { createInMemoryAiRepositories } from './support/in-memory-ai-repositories';
 import { createInMemoryAuthRepositories } from './support/in-memory-auth-repositories';
+import { createInMemoryMediaRepository } from './support/in-memory-media-repository';
 import { createInMemoryPostRepository } from './support/in-memory-post-repository';
 import { createInMemorySocialRepositories } from './support/in-memory-social-repositories';
 import { createInMemoryWorkspaceRepository } from './support/in-memory-workspace-repository';
@@ -45,6 +47,10 @@ export function buildTestApp(
     socialRepositories?: SocialRepositories;
     aiRepositories?: AiRepositories;
     postRepository?: PostRepository;
+    mediaRepository?: MediaRepository;
+    mediaStorage?: AppDependencies['mediaStorage'];
+    mediaUploadRateLimits?: AppDependencies['mediaUploadRateLimits'];
+    mediaUploadTempDir?: string;
     aiProvider?: AiProvider;
     aiRateLimits?: AppDependencies['aiRateLimits'];
     metaClient?: MetaClient;
@@ -64,6 +70,10 @@ export function buildTestApp(
     metaClient: options.metaClient,
     aiRepositories: options.aiRepositories ?? createInMemoryAiRepositories(),
     postRepository: options.postRepository ?? createInMemoryPostRepository(),
+    mediaRepository: options.mediaRepository ?? createInMemoryMediaRepository(),
+    mediaStorage: options.mediaStorage,
+    mediaUploadRateLimits: options.mediaUploadRateLimits,
+    mediaUploadTempDir: options.mediaUploadTempDir,
     aiProvider: options.aiProvider,
     aiRateLimits: options.aiRateLimits,
     authRateLimits: options.authRateLimits,

@@ -6,3 +6,5 @@ export * from './api/workspaces';
 export * from './api/social-accounts';
 export * from './api/ai-studio';
 export * from './api/posts';
+export * from './api/post-readiness';
+export * from './api/media';

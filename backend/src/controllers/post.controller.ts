@@ -1,8 +1,11 @@
 import {
-  createDraftRequestSchema,
+  createPostRequestSchema,
   postListQuerySchema,
+  postWorkflowRequestSchema,
   recordIdSchema,
+  updatePostRequestSchema,
   type PostListResponse,
+  type PostResponse,
 } from '@metaflow/shared';
 import type { RequestHandler, Response } from 'express';
 import { z } from 'zod';
@@ -12,10 +15,16 @@ import { parseRequest } from '../validators/parse-request';
 
 export interface PostController {
   list: RequestHandler;
-  createDraft: RequestHandler;
+  create: RequestHandler;
+  get: RequestHandler;
+  update: RequestHandler;
+  remove: RequestHandler;
+  duplicate: RequestHandler;
+  workflow: RequestHandler;
 }
 
 const workspaceParams = z.object({ workspaceId: recordIdSchema });
+const postParams = z.object({ workspaceId: recordIdSchema, postId: recordIdSchema });
 
 export function createPostController(service: PostService): PostController {
   const callerId = (res: Response) => {
@@ -23,6 +32,8 @@ export function createPostController(service: PostService): PostController {
     if (!auth) throw new AppError('UNAUTHENTICATED', 'Sign in to continue');
     return auth.user.id;
   };
+  const send = (res: Response, status: number, payload: PostResponse) =>
+    res.status(status).json(payload);
 
   return {
     list: async (req, res) => {
@@ -38,13 +49,49 @@ export function createPostController(service: PostService): PostController {
       res.status(200).json(payload);
     },
 
-    createDraft: async (req, res) => {
+    create: async (req, res) => {
       const { params, body } = parseRequest(req, {
         params: workspaceParams,
-        body: createDraftRequestSchema,
+        body: createPostRequestSchema,
       });
-      const post = await service.createDraft(callerId(res), params.workspaceId, body);
-      res.status(201).json({ post: toPost(post) });
+      const post = await service.create(callerId(res), params.workspaceId, body);
+      send(res, 201, { post: toPost(post) });
+    },
+
+    get: async (req, res) => {
+      const { params } = parseRequest(req, { params: postParams });
+      const post = await service.get(callerId(res), params.workspaceId, params.postId);
+      send(res, 200, { post: toPost(post) });
+    },
+
+    update: async (req, res) => {
+      const { params, body } = parseRequest(req, {
+        params: postParams,
+        body: updatePostRequestSchema,
+      });
+      const post = await service.update(callerId(res), params.workspaceId, params.postId, body);
+      send(res, 200, { post: toPost(post) });
+    },
+
+    remove: async (req, res) => {
+      const { params } = parseRequest(req, { params: postParams });
+      await service.remove(callerId(res), params.workspaceId, params.postId);
+      res.status(204).end();
+    },
+
+    duplicate: async (req, res) => {
+      const { params } = parseRequest(req, { params: postParams });
+      const post = await service.duplicate(callerId(res), params.workspaceId, params.postId);
+      send(res, 201, { post: toPost(post) });
+    },
+
+    workflow: async (req, res) => {
+      const { params, body } = parseRequest(req, {
+        params: postParams,
+        body: postWorkflowRequestSchema,
+      });
+      const post = await service.workflow(callerId(res), params.workspaceId, params.postId, body);
+      send(res, 200, { post: toPost(post) });
     },
   };
 }

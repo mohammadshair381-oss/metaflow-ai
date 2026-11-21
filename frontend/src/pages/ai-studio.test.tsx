@@ -20,6 +20,7 @@ import {
   mockApi,
   urlOf,
 } from '@/test/auth-test-utils';
+import { makePost } from '@/test/content-fixtures';
 
 const BASE = `/api/workspaces/${TEST_WORKSPACE.id}`;
 const VOICE: BrandVoice = {
@@ -193,18 +194,12 @@ describe('caption generator', () => {
       [`POST ${BASE}/posts`]: (init) =>
         json(
           {
-            post: {
+            post: makePost({
               id: 'f'.repeat(24),
-              status: 'draft',
-              caption: jsonBodyOf(init).caption,
+              caption: String(jsonBodyOf(init).caption),
               hashtags: [],
-              platforms: ['instagram'],
-              source: 'ai_studio',
               generationId: generation.id,
-              createdBy: TEST_USER.id,
-              createdAt: '2026-11-20T10:00:00.000Z',
-              updatedAt: '2026-11-20T10:00:00.000Z',
-            },
+            }),
           },
           201,
         ),
@@ -220,11 +215,17 @@ describe('caption generator', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }));
     expect(await screen.findByText(/Saved as a draft/)).toBeVisible();
-    expect(screen.getByRole('link', { name: 'View drafts' })).toHaveAttribute('href', '/posts');
+    expect(screen.getByRole('link', { name: 'Open the draft' })).toHaveAttribute(
+      'href',
+      `/posts/${'f'.repeat(24)}`,
+    );
     expect(jsonBodyOf(callsTo('POST', `${BASE}/posts`)[0]?.[1])).toEqual({
+      title: '',
       caption: 'Golden, flaky and warm.',
       platforms: ['instagram'],
       hashtags: [],
+      mediaIds: [],
+      socialAccountIds: [],
       generationId: generation.id,
     });
   });

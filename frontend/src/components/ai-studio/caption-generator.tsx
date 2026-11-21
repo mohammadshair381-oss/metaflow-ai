@@ -25,7 +25,8 @@ import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Textarea } from '@/components/ui/textarea';
 import { describeSubmitError, fieldErrorsFromZod, type FieldErrors } from '@/lib/form-errors';
-import { createDraft, generateCaptions } from '@/services/ai-studio.service';
+import { generateCaptions } from '@/services/ai-studio.service';
+import { createPost } from '@/services/post.service';
 import type { CaptionFormValues } from './caption-preset';
 import { CopyButton } from './copy-button';
 import { UsageLine } from './usage-line';
@@ -53,7 +54,7 @@ interface ResultItem {
   draft:
     | { state: 'idle' }
     | { state: 'saving' }
-    | { state: 'saved' }
+    | { state: 'saved'; postId: string }
     | { state: 'error'; message: string };
 }
 
@@ -146,12 +147,12 @@ export function CaptionGenerator({
     if (!results) return;
     setItem(item.key, { draft: { state: 'saving' } });
     try {
-      await createDraft(workspaceId, {
+      const post = await createPost(workspaceId, {
         caption: item.text,
         platforms: [results.platform],
         generationId: item.generationId,
       });
-      setItem(item.key, { draft: { state: 'saved' } });
+      setItem(item.key, { draft: { state: 'saved', postId: post.id } });
     } catch (error) {
       const message =
         error instanceof ZodError
@@ -477,8 +478,8 @@ export function CaptionGenerator({
                         >
                           <CircleCheck className="size-4" aria-hidden />
                           Saved as a draft.{' '}
-                          <Link to="/posts" className="underline">
-                            View drafts
+                          <Link to={`/posts/${item.draft.postId}`} className="underline">
+                            Open the draft
                           </Link>
                         </span>
                       ) : null}

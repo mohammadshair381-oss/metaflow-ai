@@ -13,6 +13,7 @@ import mongoose, { type Model } from 'mongoose';
 import { createDatabase } from '../src/config/database';
 import { EnvValidationError, parseEnv } from '../src/config/env';
 import { AiGenerationModel, AiUsageModel } from '../src/models/ai.model';
+import { MediaModel } from '../src/models/media.model';
 import { PostModel } from '../src/models/post.model';
 import { SessionModel } from '../src/models/session.model';
 import { OAuthStateModel, SocialAccountModel } from '../src/models/social-account.model';
@@ -31,6 +32,7 @@ const MODELS: Model<never>[] = [
   AiGenerationModel,
   AiUsageModel,
   PostModel,
+  MediaModel,
 ] as unknown as Model<never>[];
 const out = (line: string) => process.stdout.write(`${line}\n`);
 

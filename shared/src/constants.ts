@@ -22,6 +22,9 @@ export const API_ROUTES = {
 export const workspaceRoutes = (workspaceId: string) => {
   const base = `${API_ROUTES.workspaces}/${encodeURIComponent(workspaceId)}`;
   const social = `${base}/social-accounts`;
+  const posts = `${base}/posts`;
+  const media = `${base}/media`;
+  const id = encodeURIComponent;
   return {
     detail: base,
     archive: `${base}/archive`,
@@ -38,7 +41,15 @@ export const workspaceRoutes = (workspaceId: string) => {
     aiBrandVoice: `${base}/ai/brand-voice`,
     aiGenerations: `${base}/ai/generations`,
     aiUsage: `${base}/ai/usage`,
-    posts: `${base}/posts`,
+    posts,
+    post: (postId: string) => `${posts}/${id(postId)}`,
+    postDuplicate: (postId: string) => `${posts}/${id(postId)}/duplicate`,
+    postWorkflow: (postId: string) => `${posts}/${id(postId)}/workflow`,
+    media,
+    mediaItem: (mediaId: string) => `${media}/${id(mediaId)}`,
+    /** The file itself. Loaded by <img>/<video> with the session cookie. */
+    mediaFile: (mediaId: string) => `${media}/${id(mediaId)}/file`,
+    logo: `${base}/logo`,
   } as const;
 };
 

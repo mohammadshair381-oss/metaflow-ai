@@ -4,6 +4,7 @@ import {
   META_OAUTH_CALLBACK_PATH,
   type AiProviderId,
 } from '@metaflow/shared';
+import { isAbsolute, resolve } from 'node:path';
 import { z } from 'zod';
 
 export const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
@@ -40,6 +41,26 @@ export interface AiConfig {
   /** Null unless both prices are configured: costs are then not estimated. */
   pricing: AiPricing | null;
 }
+
+export const MEDIA_STORAGE_DRIVERS = ['local'] as const;
+export type MediaStorageDriver = (typeof MEDIA_STORAGE_DRIVERS)[number];
+
+/** Where uploaded media files are kept. Only a local directory today; S3-style storage later. */
+export interface MediaStorageConfig {
+  driver: MediaStorageDriver;
+  /** Absolute path of the directory that holds the files. Never sent to clients. */
+  localDir: string;
+}
+
+export interface MediaConfig {
+  /** Null when no storage is configured: the library can be listed, uploads answer 503. */
+  storage: MediaStorageConfig | null;
+  maxImageBytes: number;
+  maxVideoBytes: number;
+}
+
+/** Development default for MEDIA_LOCAL_DIR, relative to the backend folder (git-ignored). */
+export const DEVELOPMENT_MEDIA_DIR = '.data/media';
 
 const DEVELOPMENT_CORS_ORIGINS = ['http://localhost:3000'];
 
@@ -109,6 +130,23 @@ const rawEnvSchema = z.object({
     blankToUndefined,
     z.coerce.number().min(0).max(10_000).optional(),
   ),
+  /**
+   * Media library storage. In development, files go to backend/.data/media unless set. In test
+   * and production, storage stays off (uploads answer 503) until MEDIA_LOCAL_DIR is set.
+   */
+  MEDIA_STORAGE_DRIVER: z.preprocess(
+    (value) => (typeof value === 'string' ? value.trim().toLowerCase() || undefined : value),
+    z.enum(MEDIA_STORAGE_DRIVERS).optional(),
+  ),
+  MEDIA_LOCAL_DIR: z.preprocess(blankToUndefined, z.string().trim().optional()),
+  MEDIA_MAX_IMAGE_MB: z.preprocess(
+    blankToUndefined,
+    z.coerce.number().int().min(1).max(50).default(10),
+  ),
+  MEDIA_MAX_VIDEO_MB: z.preprocess(
+    blankToUndefined,
+    z.coerce.number().int().min(1).max(1024).default(100),
+  ),
 });
 
 export interface Env {
@@ -127,6 +165,7 @@ export interface Env {
   SOCIAL: SocialConfig | null;
   /** Null until an AI provider, model and API key are configured. */
   AI: AiConfig | null;
+  MEDIA: MediaConfig;
 }
 
 export class EnvValidationError extends Error {
@@ -280,6 +319,35 @@ function parseAiConfig(raw: z.infer<typeof rawEnvSchema>, issues: string[]): AiC
   };
 }
 
+function parseMediaConfig(
+  raw: z.infer<typeof rawEnvSchema>,
+  environment: (typeof APP_ENVIRONMENTS)[number],
+  issues: string[],
+): MediaConfig {
+  const limits = {
+    maxImageBytes: raw.MEDIA_MAX_IMAGE_MB * 1024 * 1024,
+    maxVideoBytes: raw.MEDIA_MAX_VIDEO_MB * 1024 * 1024,
+  };
+  let dir = raw.MEDIA_LOCAL_DIR;
+  if (dir === undefined) {
+    if (environment === 'development') dir = DEVELOPMENT_MEDIA_DIR;
+    else {
+      if (raw.MEDIA_STORAGE_DRIVER !== undefined) {
+        issues.push('MEDIA_LOCAL_DIR: is required when MEDIA_STORAGE_DRIVER is set');
+      }
+      return { storage: null, ...limits };
+    }
+  }
+  if (environment === 'production' && !isAbsolute(dir)) {
+    issues.push('MEDIA_LOCAL_DIR: must be an absolute path in production');
+    return { storage: null, ...limits };
+  }
+  return {
+    storage: { driver: raw.MEDIA_STORAGE_DRIVER ?? 'local', localDir: resolve(dir) },
+    ...limits,
+  };
+}
+
 /**
  * Validate and normalize environment variables. Throws EnvValidationError listing every problem.
  * Error messages name the variable but never include its value, so secrets cannot leak into logs.
@@ -340,6 +408,7 @@ export function parseEnv(source: NodeJS.ProcessEnv): Env {
 
   const social = parseSocialConfig(raw, isProduction, issues);
   const ai = parseAiConfig(raw, issues);
+  const media = parseMediaConfig(raw, raw.NODE_ENV, issues);
 
   if (issues.length > 0) {
     throw new EnvValidationError(issues);
@@ -357,5 +426,6 @@ export function parseEnv(source: NodeJS.ProcessEnv): Env {
     SESSION_COOKIE_SAMESITE: raw.SESSION_COOKIE_SAMESITE,
     SOCIAL: social,
     AI: ai,
+    MEDIA: media,
   };
 }

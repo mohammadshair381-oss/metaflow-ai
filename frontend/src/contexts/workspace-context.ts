@@ -26,7 +26,7 @@ export interface WorkspaceContextValue {
    */
   syncWorkspace: (
     workspaceId: string,
-    changes: Partial<Pick<Workspace, 'description' | 'defaultLanguage'>>,
+    changes: Partial<Pick<Workspace, 'description' | 'defaultLanguage' | 'logoMediaId'>>,
   ) => void;
   retry: () => void;
 }

@@ -37,6 +37,8 @@ export interface WorkspaceRecord {
   createdBy: string;
   /** Null until the brand voice is saved for the first time. */
   brandVoice: BrandVoiceRecord | null;
+  /** A media library item of this workspace, or null. */
+  logoMediaId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -95,6 +97,8 @@ export interface WorkspaceRepository {
       brandVoice: BrandVoiceRecord;
     },
   ): Promise<WorkspaceRecord | null>;
+  /** Null when the workspace does not exist or is not active. */
+  setLogo(workspaceId: string, mediaId: string | null): Promise<WorkspaceRecord | null>;
   /** Active workspaces the user belongs to, oldest first, each with the user's role. */
   listForUser(userId: string): Promise<WorkspaceWithRole[]>;
   countActiveOwnedBy(userId: string): Promise<number>;

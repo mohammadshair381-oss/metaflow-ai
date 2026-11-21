@@ -4,11 +4,8 @@ import {
   aiUsageSummaryResponseSchema,
   brandVoiceResponseSchema,
   captionGenerationResponseSchema,
-  createDraftRequestSchema,
   hashtagGenerationResponseSchema,
   ideasGenerationResponseSchema,
-  postListResponseSchema,
-  postResponseSchema,
   workspaceRoutes,
   type AiFeature,
   type AiGenerationListResponse,
@@ -17,13 +14,10 @@ import {
   type BrandVoice,
   type CaptionGeneration,
   type CaptionRequest,
-  type CreateDraftRequest,
   type HashtagGeneration,
   type HashtagRequest,
   type IdeasGeneration,
   type IdeasRequest,
-  type Post,
-  type PostListResponse,
   type UpdateBrandVoiceRequest,
 } from '@metaflow/shared';
 import { apiRequest } from './api-client';
@@ -137,30 +131,4 @@ export async function fetchAiUsage(
     },
   );
   return data.usage;
-}
-
-/** Saves a caption as a draft post. Validated with the same rules the API applies. */
-export async function createDraft(workspaceId: string, input: CreateDraftRequest): Promise<Post> {
-  const body = createDraftRequestSchema.parse(input);
-  const { data } = await apiRequest(workspaceRoutes(workspaceId).posts, postResponseSchema, {
-    method: 'POST',
-    body,
-  });
-  return data.post;
-}
-
-export async function listPosts(
-  workspaceId: string,
-  query: { before?: string } = {},
-  signal?: AbortSignal,
-): Promise<PostListResponse> {
-  const suffix = query.before ? `?before=${encodeURIComponent(query.before)}` : '';
-  const { data } = await apiRequest(
-    `${workspaceRoutes(workspaceId).posts}${suffix}`,
-    postListResponseSchema,
-    {
-      signal,
-    },
-  );
-  return data;
 }

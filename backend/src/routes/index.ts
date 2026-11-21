@@ -9,6 +9,11 @@ import {
 import { createAuthRouter, type AuthRouterDependencies } from './auth.routes';
 import { createHealthRouter } from './health.routes';
 import {
+  createMediaRouter,
+  createWorkspaceLogoRouter,
+  type MediaRouterDependencies,
+} from './media.routes';
+import {
   createSocialAccountRouter,
   createSocialCallbackRouter,
   type SocialAccountRouterDependencies,
@@ -22,6 +27,7 @@ export interface ApiRouterDependencies {
   social: SocialAccountRouterDependencies;
   ai: AiStudioRouterDependencies;
   posts: PostRouterDependencies;
+  media: MediaRouterDependencies;
 }
 
 /** Mounted at /api. Each feature module adds its router here. */
@@ -32,6 +38,7 @@ export function createApiRouter({
   social,
   ai,
   posts,
+  media,
 }: ApiRouterDependencies): Router {
   const router = Router();
   router.use('/health', createHealthRouter(health));
@@ -39,6 +46,8 @@ export function createApiRouter({
   router.use('/workspaces/:workspaceId/social-accounts', createSocialAccountRouter(social));
   router.use('/workspaces/:workspaceId/ai', createAiStudioRouter(ai));
   router.use('/workspaces/:workspaceId/posts', createPostRouter(posts));
+  router.use('/workspaces/:workspaceId/media', createMediaRouter(media));
+  router.use('/workspaces/:workspaceId/logo', createWorkspaceLogoRouter(media));
   router.use('/workspaces', createWorkspaceRouter(workspaces));
   router.use('/social', createSocialCallbackRouter(social.controller));
   return router;

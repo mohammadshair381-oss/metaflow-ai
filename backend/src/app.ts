@@ -10,6 +10,7 @@ import { createSessionCookieConfig } from './config/session-cookie';
 import { createAiStudioController } from './controllers/ai-studio.controller';
 import { createAuthController } from './controllers/auth.controller';
 import { createHealthController } from './controllers/health.controller';
+import { createMediaController } from './controllers/media.controller';
 import { createPostController } from './controllers/post.controller';
 import { createSocialAccountController } from './controllers/social-account.controller';
 import { createWorkspaceController } from './controllers/workspace.controller';
@@ -18,12 +19,14 @@ import type { AiProvider } from './integrations/ai/ai-provider';
 import { createMetaClient, type MetaClient } from './integrations/meta/meta-client';
 import { createRequireAuth } from './middleware/authenticate';
 import { createErrorHandler } from './middleware/error-handler';
+import { createMediaUploadParser } from './middleware/media-upload';
 import { notFoundHandler } from './middleware/not-found';
 import {
   createAuthRateLimiters,
   createIpRateLimiter,
   createUserRateLimiter,
   DEFAULT_AI_RATE_LIMITS,
+  DEFAULT_MEDIA_UPLOAD_RATE_LIMITS,
   type AuthRateLimits,
   type UserRateLimits,
 } from './middleware/rate-limit';
@@ -32,6 +35,7 @@ import { requestLogger } from './middleware/request-logger';
 import { requireTrustedOrigin } from './middleware/trusted-origin';
 import type { AiRepositories } from './repositories/ai-repositories';
 import type { AuthRepositories } from './repositories/auth-repositories';
+import type { MediaRepository } from './repositories/media-repositories';
 import type { PostRepository } from './repositories/post-repositories';
 import type { SocialRepositories } from './repositories/social-repositories';
 import type { WorkspaceRepository } from './repositories/workspace-repositories';
@@ -39,12 +43,15 @@ import { createApiRouter } from './routes';
 import { createAiStudioService } from './services/ai-studio.service';
 import { createAuthService } from './services/auth.service';
 import { createHealthService } from './services/health.service';
+import { createMediaService } from './services/media.service';
 import { createPostService } from './services/post.service';
 import {
   createSocialAccountService,
   type SocialIntegration,
 } from './services/social-account.service';
 import { createWorkspaceService } from './services/workspace.service';
+import { createLocalMediaStorage } from './storage/local-media-storage';
+import type { MediaStorage } from './storage/media-storage';
 import { readCookie } from './utils/cookies';
 import type { Logger } from './utils/logger';
 import { createSecretBox } from './utils/secret-box';
@@ -59,6 +66,13 @@ export interface AppDependencies {
   socialRepositories: SocialRepositories;
   aiRepositories: AiRepositories;
   postRepository: PostRepository;
+  mediaRepository: MediaRepository;
+  /** Override only in tests (undefined: built from `env.MEDIA.storage`; null: no storage). */
+  mediaStorage?: MediaStorage | null;
+  /** Override only in tests; production uses DEFAULT_MEDIA_UPLOAD_RATE_LIMITS. */
+  mediaUploadRateLimits?: UserRateLimits;
+  /** Override only in tests; otherwise the OS temporary directory. */
+  mediaUploadTempDir?: string;
   /** Override only in tests; otherwise built from the AI settings in `env.AI`. */
   aiProvider?: AiProvider;
   /** Override only in tests; production uses DEFAULT_AI_RATE_LIMITS. */
@@ -86,6 +100,10 @@ export function createApp({
   socialRepositories,
   aiRepositories,
   postRepository,
+  mediaRepository,
+  mediaStorage,
+  mediaUploadRateLimits = DEFAULT_MEDIA_UPLOAD_RATE_LIMITS,
+  mediaUploadTempDir,
   metaClient,
   aiProvider,
   aiRateLimits = DEFAULT_AI_RATE_LIMITS,
@@ -157,7 +175,26 @@ export function createApp({
   const postService = createPostService({
     workspaces: workspaceService,
     posts: postRepository,
+    media: mediaRepository,
+    socialAccounts: socialRepositories.accounts,
     generations: aiRepositories.generations,
+    now,
+  });
+
+  // Without storage the library can be listed but nothing can be uploaded or served (503).
+  const storage =
+    mediaStorage === undefined
+      ? env.MEDIA.storage && createLocalMediaStorage(env.MEDIA.storage.localDir)
+      : mediaStorage;
+  const mediaService = createMediaService({
+    workspaces: workspaceService,
+    workspaceRepository,
+    media: mediaRepository,
+    posts: postRepository,
+    storage,
+    maxImageBytes: env.MEDIA.maxImageBytes,
+    maxVideoBytes: env.MEDIA.maxVideoBytes,
+    logger,
   });
 
   app.use(
@@ -189,6 +226,15 @@ export function createApp({
         generationLimiter: createUserRateLimiter(aiRateLimits),
       },
       posts: { controller: createPostController(postService), requireAuth },
+      media: {
+        controller: createMediaController(mediaService, logger),
+        requireAuth,
+        uploadLimiter: createUserRateLimiter(mediaUploadRateLimits),
+        uploadParser: createMediaUploadParser({
+          maxFileBytes: Math.max(env.MEDIA.maxImageBytes, env.MEDIA.maxVideoBytes),
+          tempDir: mediaUploadTempDir,
+        }),
+      },
     }),
   );
 

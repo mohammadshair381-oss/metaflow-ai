@@ -11,6 +11,7 @@ import { FormAlert } from '@/components/auth/form-alert';
 import { FormField } from '@/components/auth/form-field';
 import { PageHeader } from '@/components/common/page-header';
 import { WorkspaceForm } from '@/components/workspaces/workspace-form';
+import { WorkspaceLogoSettings } from '@/components/workspaces/workspace-logo';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -211,6 +212,15 @@ export function WorkspaceSettingsPage() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Logo</CardTitle>
+          <CardDescription>Shown in MetaFlow AI next to the workspace name.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <WorkspaceLogoSettings workspace={workspace} />
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader>
           <CardTitle>Members</CardTitle>

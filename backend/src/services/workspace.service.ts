@@ -52,6 +52,7 @@ export function toWorkspace({ workspace, role }: WorkspaceAccess): Workspace {
     defaultLanguage: workspace.defaultLanguage,
     status: workspace.status,
     role,
+    logoMediaId: workspace.logoMediaId,
     createdAt: workspace.createdAt.toISOString(),
     updatedAt: workspace.updatedAt.toISOString(),
   };

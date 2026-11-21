@@ -30,6 +30,19 @@ export const ERROR_CODES = [
   'GENERATION_REFUSED',
   /** A dependency (the database) is temporarily unreachable. */
   'SERVICE_UNAVAILABLE',
+  /** The upload is not a supported image or video, or its name does not match its content. */
+  'UNSUPPORTED_MEDIA',
+  /** The media item is still attached to posts or used as the workspace logo. */
+  'MEDIA_IN_USE',
+  /** The post's current status does not allow the action (or it changed meanwhile). */
+  'INVALID_TRANSITION',
+  /** The post does not meet its platforms' rules yet; `details` lists what to fix. */
+  'POST_NOT_READY',
+  /**
+   * The record changed after the caller read it (its revision moved on). Nothing was changed;
+   * reload it and decide again.
+   */
+  'CONFLICT',
 ] as const;
 
 export const errorCodeSchema = z.enum(ERROR_CODES);

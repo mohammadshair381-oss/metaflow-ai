@@ -36,6 +36,7 @@ export class ApiRequestError extends Error {
 
 export interface ApiRequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  /** Sent as JSON, or as multipart form data when it is a FormData (file uploads). */
   body?: unknown;
   signal?: AbortSignal;
   timeoutMs?: number;
@@ -88,6 +89,8 @@ export async function apiRequest<T>(
   signal?.addEventListener('abort', forwardAbort, { once: true });
 
   const startedAt = performance.now();
+  // The browser sets the multipart Content-Type (with its boundary) for FormData itself.
+  const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
   let response: Response;
   try {
     response = await fetchImpl(`${baseUrl}${path}`, {
@@ -96,9 +99,9 @@ export async function apiRequest<T>(
       cache: 'no-store',
       headers: {
         Accept: 'application/json',
-        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        ...(body === undefined || isForm ? {} : { 'Content-Type': 'application/json' }),
       },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
       signal: controller.signal,
     });
   } catch (error) {

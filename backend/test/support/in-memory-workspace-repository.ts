@@ -39,6 +39,7 @@ export function createInMemoryWorkspaceRepository(
         archivedAt: null,
         createdBy: ownerId,
         brandVoice: null,
+        logoMediaId: null,
         createdAt: at,
         updatedAt: at,
       };
@@ -124,6 +125,14 @@ export function createInMemoryWorkspaceRepository(
         },
         updatedAt: tick(),
       };
+      workspaces.set(workspaceId, updated);
+      return Promise.resolve({ ...updated });
+    },
+
+    setLogo(workspaceId, mediaId) {
+      const workspace = workspaces.get(workspaceId);
+      if (!workspace || workspace.status !== 'active') return Promise.resolve(null);
+      const updated = { ...workspace, logoMediaId: mediaId, updatedAt: tick() };
       workspaces.set(workspaceId, updated);
       return Promise.resolve({ ...updated });
     },

@@ -5,6 +5,7 @@ import { createDatabase } from './config/database';
 import { EnvValidationError, parseEnv, type Env } from './config/env';
 import { createMongoAiRepositories } from './repositories/mongo-ai-repositories';
 import { createMongoAuthRepositories } from './repositories/mongo-auth-repositories';
+import { createMongoMediaRepository } from './repositories/mongo-media-repository';
 import { createMongoPostRepository } from './repositories/mongo-post-repository';
 import { createMongoSocialRepositories } from './repositories/mongo-social-repositories';
 import { createMongoWorkspaceRepository } from './repositories/mongo-workspace-repositories';
@@ -52,6 +53,7 @@ function main(): void {
     socialRepositories: createMongoSocialRepositories(),
     aiRepositories: createMongoAiRepositories(),
     postRepository: createMongoPostRepository(),
+    mediaRepository: createMongoMediaRepository(),
   });
   const server = createServer(app);
   const shutdownController = new AbortController();
@@ -71,6 +73,8 @@ function main(): void {
       // Provider and model are not secret; the API key never appears in logs.
       aiProvider: env.AI?.provider ?? null,
       aiModel: env.AI?.model ?? null,
+      // The driver only; the directory is a server detail and stays out of logs.
+      mediaStorage: env.MEDIA.storage?.driver ?? null,
     });
   });
 

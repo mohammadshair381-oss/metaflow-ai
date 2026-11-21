@@ -40,6 +40,7 @@ function toWorkspaceRecord(doc: WithId<WorkspaceFields>): WorkspaceRecord {
           updatedAt: doc.brandVoice.updatedAt,
         }
       : null,
+    logoMediaId: doc.logoMediaId?.toString() ?? null,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };
@@ -164,6 +165,16 @@ export function createMongoWorkspaceRepository(): WorkspaceRepository {
         { _id: new Types.ObjectId(workspaceId), status: 'active' },
         { $set: { description, defaultLanguage, brandVoice } },
         { new: true, runValidators: true },
+      ).lean();
+      return doc ? toWorkspaceRecord(doc) : null;
+    },
+
+    async setLogo(workspaceId, mediaId) {
+      if (!isValidObjectId(workspaceId)) return null;
+      const doc = await WorkspaceModel.findOneAndUpdate(
+        { _id: new Types.ObjectId(workspaceId), status: 'active' },
+        { $set: { logoMediaId: mediaId ? new Types.ObjectId(mediaId) : null } },
+        { new: true },
       ).lean();
       return doc ? toWorkspaceRecord(doc) : null;
     },

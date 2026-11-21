@@ -37,6 +37,10 @@ credentials*.json
 service-account*.json
 secrets/
 
+# ── Local data ─────────────────────────────────────────────────
+# Uploaded media in development (MEDIA_LOCAL_DIR default: backend/.data/media).
+.data/
+
 # ── Logs ───────────────────────────────────────────────────────
 logs/
 *.log

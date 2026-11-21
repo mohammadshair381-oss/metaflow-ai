@@ -41,11 +41,19 @@ export interface PostRouterDependencies {
   requireAuth: RequestHandler;
 }
 
-/** Mounted at /api/workspaces/:workspaceId/posts. */
+/**
+ * Mounted at /api/workspaces/:workspaceId/posts. Every route needs a session; the service
+ * checks membership, roles and the post's status on each call.
+ */
 export function createPostRouter({ controller, requireAuth }: PostRouterDependencies): Router {
   const router = Router({ mergeParams: true });
   router.use(noStore, requireAuth);
   router.get('/', controller.list);
-  router.post('/', controller.createDraft);
+  router.post('/', controller.create);
+  router.get('/:postId', controller.get);
+  router.patch('/:postId', controller.update);
+  router.delete('/:postId', controller.remove);
+  router.post('/:postId/duplicate', controller.duplicate);
+  router.post('/:postId/workflow', controller.workflow);
   return router;
 }

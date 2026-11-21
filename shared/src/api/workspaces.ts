@@ -132,6 +132,8 @@ export const workspaceSchema = z.object({
   defaultLanguage: languageSchema,
   status: z.enum(WORKSPACE_STATUSES),
   role: z.enum(WORKSPACE_ROLES),
+  /** A media library image of this workspace; load it from the media file endpoint. */
+  logoMediaId: z.string().nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });

@@ -2,8 +2,8 @@
 
 AI-powered social media automation SaaS. Businesses, creators and agencies will connect Facebook Pages and Instagram Professional accounts, generate content with AI, and schedule or auto-publish it.
 
-> **Status: Milestone 5 — AI Studio (built and tested locally; not deployed).**
-> Users can register and sign in, manage workspaces, connect Facebook Pages and Instagram professional accounts, and use AI Studio to write captions, find hashtags and get content ideas in their brand voice, saving captions as drafts. The Meta and AI integrations are tested against simulated responses; running them for real needs a Meta app ([docs/meta-setup.md](docs/meta-setup.md)) and an AI provider key ([docs/ai-setup.md](docs/ai-setup.md)). Production deployment is postponed.
+> **Status: Milestone 6 — Content management and media library (built and tested locally; not deployed).**
+> Users can register and sign in, manage workspaces, connect Facebook Pages and Instagram professional accounts, use AI Studio to write captions, hashtags and content ideas in their brand voice, upload photos and videos to a media library, and write posts with media and destination accounts that the workspace owner approves. Nothing is published yet: scheduling and publishing are the next milestone. The Meta and AI integrations are tested against simulated responses; running them for real needs a Meta app ([docs/meta-setup.md](docs/meta-setup.md)) and an AI provider key ([docs/ai-setup.md](docs/ai-setup.md)). Production deployment is postponed.
 
 ## Architecture
 
@@ -72,17 +72,19 @@ To use a database or change defaults, copy the relevant section of [`.env.exampl
 
 ### Routes
 
-| Path                                                           | Page                                                                                      |
-| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `/`                                                            | Public landing page                                                                       |
-| `/login`, `/register`                                          | Sign-in and registration forms                                                            |
-| `/dashboard`                                                   | Active workspace overview, backend connection status and build progress                   |
-| `/workspaces/new`                                              | Create another workspace                                                                  |
-| `/settings`                                                    | Workspace settings: business profile, members, archive (owner only)                       |
-| `/accounts`                                                    | Social Accounts: connect, check and disconnect Facebook Pages and Instagram accounts      |
-| `/ai-studio`                                                   | AI Studio: captions, hashtags, content ideas, brand voice and generation history          |
-| `/posts`                                                       | Drafts saved for the workspace (editing and publishing arrive with the content milestone) |
-| `/calendar`, `/automations`, `/analytics`, `/team`, `/billing` | Honest empty states: what each module will do and which milestone delivers it             |
+| Path                                                           | Page                                                                                 |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `/`                                                            | Public landing page                                                                  |
+| `/login`, `/register`                                          | Sign-in and registration forms                                                       |
+| `/dashboard`                                                   | Active workspace overview, backend connection status and build progress              |
+| `/workspaces/new`                                              | Create another workspace                                                             |
+| `/settings`                                                    | Workspace settings: business profile, logo, members, archive (owner only)            |
+| `/accounts`                                                    | Social Accounts: connect, check and disconnect Facebook Pages and Instagram accounts |
+| `/ai-studio`                                                   | AI Studio: captions, hashtags, content ideas, brand voice and generation history     |
+| `/posts`                                                       | Posts: search, filter by status and platform, duplicate, delete                      |
+| `/posts/new`, `/posts/:postId`                                 | Post editor: content, media, platforms and accounts, platform check, approval        |
+| `/media`                                                       | Media Library: upload, search, edit alt text, delete unused files                    |
+| `/calendar`, `/automations`, `/analytics`, `/team`, `/billing` | Honest empty states: what each module will do and which milestone delivers it        |
 
 Signed-in routes sit behind `ProtectedRoute`: visitors are sent to `/login` and returned to the page they wanted after signing in. The session survives reloads (it is restored from the HTTP-only cookie). A signed-in user without a workspace is asked to create one first.
 
@@ -121,17 +123,21 @@ Response shapes are defined once in [`shared/src/api`](shared/src/api) and valid
 
 ## Environment variables
 
-| Variable                  | Where    | Required                 | Purpose                                                                                   |
-| ------------------------- | -------- | ------------------------ | ----------------------------------------------------------------------------------------- |
-| `NODE_ENV`                | backend  | production: `production` | Runtime mode                                                                              |
-| `PORT`                    | backend  | no (Render sets it)      | Listen port, default 4000                                                                 |
-| `MONGODB_URI`             | backend  | **yes in production**    | MongoDB connection string (secret)                                                        |
-| `CORS_ORIGINS`            | backend  | **yes in production**    | Exact frontend origins allowed to call the API                                            |
-| `TRUST_PROXY`             | backend  | Render: `1`              | Proxy hops to trust                                                                       |
-| `LOG_LEVEL`               | backend  | no                       | `debug` / `info` / `warn` / `error`                                                       |
-| `SESSION_TTL_DAYS`        | backend  | no (default 7)           | Session lifetime in days (1–90)                                                           |
-| `SESSION_COOKIE_SAMESITE` | backend  | no (default `lax`)       | `lax` / `strict` / `none` (`none` only in production, for a cross-site setup)             |
-| `VITE_API_BASE_URL`       | frontend | **yes on Vercel**        | Backend origin, embedded at build time (public). Leave empty locally to use the dev proxy |
+| Variable                  | Where    | Required                 | Purpose                                                                                             |
+| ------------------------- | -------- | ------------------------ | --------------------------------------------------------------------------------------------------- |
+| `NODE_ENV`                | backend  | production: `production` | Runtime mode                                                                                        |
+| `PORT`                    | backend  | no (Render sets it)      | Listen port, default 4000                                                                           |
+| `MONGODB_URI`             | backend  | **yes in production**    | MongoDB connection string (secret)                                                                  |
+| `CORS_ORIGINS`            | backend  | **yes in production**    | Exact frontend origins allowed to call the API                                                      |
+| `TRUST_PROXY`             | backend  | Render: `1`              | Proxy hops to trust                                                                                 |
+| `LOG_LEVEL`               | backend  | no                       | `debug` / `info` / `warn` / `error`                                                                 |
+| `SESSION_TTL_DAYS`        | backend  | no (default 7)           | Session lifetime in days (1–90)                                                                     |
+| `SESSION_COOKIE_SAMESITE` | backend  | no (default `lax`)       | `lax` / `strict` / `none` (`none` only in production, for a cross-site setup)                       |
+| `MEDIA_LOCAL_DIR`         | backend  | to enable uploads        | Directory for uploaded media (absolute in production; default `backend/.data/media` in development) |
+| `MEDIA_STORAGE_DRIVER`    | backend  | no (default `local`)     | Media storage adapter; only `local` exists today                                                    |
+| `MEDIA_MAX_IMAGE_MB`      | backend  | no (default 10)          | Largest accepted image                                                                              |
+| `MEDIA_MAX_VIDEO_MB`      | backend  | no (default 100)         | Largest accepted video                                                                              |
+| `VITE_API_BASE_URL`       | frontend | **yes on Vercel**        | Backend origin, embedded at build time (public). Leave empty locally to use the dev proxy           |
 
 Full documentation: [`.env.example`](.env.example).
 
@@ -143,6 +149,7 @@ pnpm test
 
 - `shared`: contract schemas, including email normalization and the password policy.
 - `backend`: env validation, health and readiness, CORS, error envelope, request validation, logging and redaction, and the MongoDB utility against an unreachable server. Authentication over HTTP: registration (success, duplicate email, invalid email, weak password), login (success, wrong password, unknown email, suspended account, session replacement), logout and sign-out-everywhere, expired and revoked sessions, unauthorized requests, cookie attributes in development and production, no password data in any response, the Origin check, both rate limits, and a 503 when MongoDB is down. Password hashing, session tokens, cookie parsing, model schemas/indexes and the index plan.
+- Content management (backend): upload sniffing for every format and for disguised SVG/HTML, extension and claimed-type mismatches, empty, oversized, malformed and multi-file uploads, temporary-file cleanup, storage-key and path-escape checks, safe file headers and byte ranges, media in use (posts, logo), staff/owner permissions, every post workflow transition (including revision-checked races between edits, submissions, withdrawals and decisions, and readiness re-checks at approval), the post repository contract (in-memory, and MongoDB when `MONGODB_TEST_URI` is set), tenant isolation on every media and post route, and archived workspaces.
 - `frontend`: API client; every route, including one-`<h1>` checks; route guards in each session state; the status panel; and the real auth flow with only `fetch` mocked: session restoration, retry after an outage, sign-in, registration (client- and server-side validation), sign-out, and a failed sign-out that keeps the user signed in.
 
 Auth tests use **in-memory repositories**, so they need no database and never touch real data. The MongoDB suites (`database.test.ts` live part, `auth-mongo.test.ts`) run only when `MONGODB_TEST_URI` points at a **disposable** database whose name contains `test`; anything else is refused:
@@ -168,6 +175,7 @@ Short version: backend on Render via `render.yaml`; frontend on Vercel with Root
 - Login gives one generic error for unknown emails and wrong passwords, with matching timing; auth endpoints are rate-limited per IP and per account; state-changing requests from unlisted origins are refused (CSRF).
 - Workspaces are isolated: the API resolves access from the signed-in user's membership on every request, answers 404 for workspaces the user does not belong to, and limits editing and archiving to the owner.
 - Social access tokens are encrypted at rest (AES-256-GCM), never returned by the API and never logged. Connecting uses Meta's OAuth with a single-use, 10-minute `state` bound to the user and workspace.
+- Uploaded media is identified by its content (signatures), never by its name or the browser's type; SVG and HTML are refused. Files are stored under random server-generated keys outside anything served statically, and served only through the API after a membership check, with `nosniff`, a sandboxing CSP and the detected content type.
 - AI provider keys stay on the server; the provider and model come from server configuration only. Prompts are never stored or logged, every AI reply is validated before use, and generation is rate-limited per user.
 - Before deploying sign-in, put both apps on one custom domain: cookies across `vercel.app` and `onrender.com` are third-party and unreliable. See [docs/architecture.md](docs/architecture.md#cross-site-cookies-and-custom-domains).
 
@@ -177,7 +185,7 @@ Short version: backend on Render via `render.yaml`; frontend on Vercel with Root
 2. Accounts, sign-in and server-managed sessions (built)
 3. Workspaces, membership and owner/staff roles (built; team invitations come with milestone 8)
 4. Facebook and Instagram connection (Meta OAuth) (built; needs a Meta app to run for real)
-5. **AI Studio: providers, brand voice, captions, hashtags and ideas** ← current (built; needs an AI provider key to run for real)
-6. Content management: post editor, media and approvals
+5. AI Studio: providers, brand voice, captions, hashtags and ideas (built; needs an AI provider key to run for real)
+6. **Content management: post editor, media library and approvals** ← current (built; local storage only)
 7. Scheduling, approvals and publishing (background worker)
 8. Automation, analytics, billing and administration

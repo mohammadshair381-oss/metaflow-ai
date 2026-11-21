@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useActiveWorkspace } from '@/contexts/workspace-context';
+import { WorkspaceLogoImage } from './workspace-logo';
 
 /** The active workspace's business profile, as saved on the server. */
 export function WorkspaceOverviewCard() {
@@ -18,6 +19,7 @@ export function WorkspaceOverviewCard() {
     <Card>
       <CardHeader>
         <div className="flex flex-wrap items-center gap-2">
+          <WorkspaceLogoImage workspace={workspace} className="size-8" />
           <CardTitle>{workspace.name}</CardTitle>
           <Badge variant="outline">{workspace.role === 'owner' ? 'Owner' : 'Staff'}</Badge>
         </div>

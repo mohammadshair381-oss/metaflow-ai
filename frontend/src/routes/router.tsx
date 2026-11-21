@@ -71,6 +71,27 @@ export const appRoutes: RouteObject[] = [
                 },
               },
               {
+                path: '/posts/new',
+                lazy: async () => {
+                  const { PostEditorPage } = await import('@/pages/post-editor-page');
+                  return { Component: PostEditorPage };
+                },
+              },
+              {
+                path: '/posts/:postId',
+                lazy: async () => {
+                  const { PostEditorPage } = await import('@/pages/post-editor-page');
+                  return { Component: PostEditorPage };
+                },
+              },
+              {
+                path: '/media',
+                lazy: async () => {
+                  const { MediaLibraryPage } = await import('@/pages/media-library-page');
+                  return { Component: MediaLibraryPage };
+                },
+              },
+              {
                 path: '/accounts',
                 lazy: async () => {
                   const { SocialAccountsPage } = await import('@/pages/social-accounts-page');

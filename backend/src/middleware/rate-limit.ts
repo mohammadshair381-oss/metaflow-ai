@@ -63,6 +63,11 @@ export interface UserRateLimits {
 
 /** AI generation: 30 requests per user per 10 minutes. */
 export const DEFAULT_AI_RATE_LIMITS: UserRateLimits = { windowMs: 10 * 60 * 1000, limit: 30 };
+/** Uploads per user: generous for normal use, a ceiling on disk and bandwidth abuse. */
+export const DEFAULT_MEDIA_UPLOAD_RATE_LIMITS: UserRateLimits = {
+  windowMs: 10 * 60 * 1000,
+  limit: 60,
+};
 
 /**
  * Per signed-in user (after requireAuth), falling back to the client IP. For endpoints whose

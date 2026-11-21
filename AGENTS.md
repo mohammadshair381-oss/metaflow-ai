@@ -6,7 +6,7 @@ Guidance for AI agents and contributors working in this repository. Read this fi
 
 **MetaFlow AI**: a multi-tenant SaaS for AI-assisted social media management. Users connect Facebook Pages and Instagram Professional (Business/Creator) accounts, generate content with AI, and publish it with manual approval or automatically.
 
-**Current milestone: 5 — AI Studio.** Built: health checks, the dashboard shell, registration/login/logout with server-managed sessions, workspaces with owner/staff roles, the Facebook Page / Instagram connection, and AI Studio (captions, hashtags, content ideas, brand voice, history, usage records) with drafts saved as the first part of the Post model. The Meta and AI integrations are tested against simulated responses only; neither has run against the real service (see `docs/meta-setup.md`, `docs/ai-setup.md`).
+**Current milestone: 6 — Content management and media library.** Built: health checks, the dashboard shell, registration/login/logout with server-managed sessions, workspaces with owner/staff roles, the Facebook Page / Instagram connection, AI Studio (captions, hashtags, content ideas, brand voice, history, usage records), and content management: a media library (uploads identified by content, stored behind a storage interface), posts with media and destination accounts, platform readiness checks and an owner approval workflow, and the workspace logo. The Meta and AI integrations are tested against simulated responses only; neither has run against the real service (see `docs/meta-setup.md`, `docs/ai-setup.md`).
 
 ## Ground rules
 
@@ -22,6 +22,7 @@ Guidance for AI agents and contributors working in this repository. Read this fi
 
 - **Database:** MongoDB with Mongoose 8 only. Never introduce Prisma, MySQL or PostgreSQL.
 - **Not yet:** do not build publishing, scheduling or advanced automation until their milestone is approved.
+- **Uploaded files:** go through `media/media-inspector.ts` (identified by content, never by name or browser type) and a `storage/` adapter with server-generated keys. Never serve the storage directory statically; files are served only by the media file endpoint, after `requireAccess`, with `nosniff` and a sandboxing CSP. Never accept SVG or HTML.
 - **Separate project:** `D:\Projects\SiteForge` is unrelated. Never modify it or merge code from it.
 - **Dependencies:** add a package only when it is clearly needed, pin exact versions, and prefer what is already installed.
 - **Git:** never commit `.env` files or credentials. Never push or deploy without the owner's instruction.

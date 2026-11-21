@@ -102,6 +102,8 @@ const workspaceSchema = new Schema(
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     /** Null until the brand voice is saved for the first time. */
     brandVoice: { type: brandVoiceSchema, default: null },
+    /** An image from the workspace's own media library, set by the owner. */
+    logoMediaId: { type: Schema.Types.ObjectId, ref: 'Media', default: null },
   },
   { collection: 'workspaces', timestamps: true },
 );

@@ -370,7 +370,89 @@ Captions, hashtags and content ideas for one workspace, written by one AI provid
 
 Request bodies are strict: a `provider`, `model`, `system` or `prompt` field is rejected with 400. Generation is limited to 30 requests per user per 10 minutes.
 
-**Drafts** (`/api/workspaces/:workspaceId/posts`): `POST /` saves a draft (any member; `generationId` must belong to the same workspace), `GET /` lists posts newest first. This is the first part of the `posts` collection: status is always `draft` for now, and the content milestone adds editing, media, approval and scheduling to the same model.
+**Drafts:** "Save as draft" creates a post through the posts API (`generationId` must belong to the same workspace) and links to it; see [Content management](#content-management-and-media-library).
+
+## Content management and media library
+
+Posts with media and destination accounts, a per-workspace media library, platform readiness checks and an owner approval workflow. Nothing is published: scheduling and publishing are the next milestone.
+
+### Media storage
+
+| Part              | Where                                               | Job                                                                                                                                                                         |
+| ----------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Upload parser     | `middleware/media-upload.ts` (multer, disk storage) | One file per request into the OS temp directory under a random name; size, part and field limits; refuses before reading when `Content-Length` is too large                 |
+| Inspector         | `media/media-inspector.ts`                          | Identifies the format from the file's signature; reads image dimensions from the header; cleans the display name                                                            |
+| Storage interface | `storage/media-storage.ts`                          | `put`, `open` (optionally a byte range), `size`, `delete` by opaque key. Keys are server-generated: `<workspaceId>/<32 random hex>.<ext>`, checked against a strict pattern |
+| Local adapter     | `storage/local-media-storage.ts`                    | Files under `MEDIA_LOCAL_DIR` (mode 0600, never overwritten); every resolved path must stay inside the root                                                                 |
+| Service           | `services/media.service.ts`                         | `requireAccess`, inspection and limits, storage, metadata, deletion rules, logo                                                                                             |
+| Metadata          | `models/media.model.ts` (`media` collection)        | Workspace, kind, detected MIME type, cleaned original name, storage key, size, width/height, duration (null), alt text, description, uploader, timestamps                   |
+
+The database holds metadata and the storage key; storage holds bytes. Clients never see a key or a path. **Cloud migration:** write an S3-compatible adapter implementing `MediaStorage` (`put` → `PutObject` with the content type, `open` → `GetObject` with `Range`, `size` → `HeadObject`, `delete` → `DeleteObject`), choose it in `app.ts` from a new `MEDIA_STORAGE_DRIVER` value, and copy existing files key by key (keys stay valid). Serving can stay as it is, or switch to short-lived signed URLs once the bucket is private and on the same site.
+
+**Local storage on Render:** the default service disk is wiped on every deploy. Use a Render persistent disk mounted at `MEDIA_LOCAL_DIR` (one instance only), or wait for cloud storage. Without `MEDIA_LOCAL_DIR`, test and production keep uploads off (503 `INTEGRATION_NOT_CONFIGURED`) while the library and posts keep working.
+
+### Upload security
+
+- **Content decides.** Accepted: JPEG, PNG, WebP, GIF (images) and MP4, WebM (videos), recognized by signature. MP4 must carry an MP4 video brand; HEIC/AVIF, QuickTime and audio-only MP4 brands are refused; WebM needs the `webm` DocType (other Matroska files are refused). SVG, HTML, PDF and everything else are refused (415 `UNSUPPORTED_MEDIA`).
+- **Name and type must agree.** The extension must belong to the detected format; a browser-claimed type is ignored when unspecific (`application/octet-stream`) but must match when specific.
+- **Limits.** Images `MEDIA_MAX_IMAGE_MB` (10), videos `MEDIA_MAX_VIDEO_MB` (100), applied after identifying the kind; the parser stops at the larger one. Empty files are refused; one file, four fields, six parts per request. 60 uploads per user per 10 minutes.
+- **Order of checks.** Session and Origin check, rate limit, then `requireAccess` and "storage configured" **before the body is read**, then parsing, inspection, storage, metadata. The temporary file is deleted before the response in every case. If saving metadata fails, the stored file is deleted.
+- **Serving.** `GET …/media/:id/file` after `requireAccess`: the stored (detected) `Content-Type`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`, an RFC 6266 `Content-Disposition` (inline, or attachment with `?download=1`), `Cache-Control: private, max-age=300`, `Cross-Origin-Resource-Policy: same-site`, and single byte ranges (206/416) for video seeking.
+- **Not done (documented limits):** no virus scanning, no re-encoding or metadata (EXIF/GPS) stripping, no check that an MP4 really contains a video track, and no video duration. Thumbnails are the original files. There is no storage quota per workspace (only the per-file limits and the upload rate limit), and no job that sweeps orphaned files (a file whose delete failed after its record was removed is only logged as `media.file_delete_failed`).
+
+### Media lifecycle
+
+- **Delete is refused while the item is used** (409 `MEDIA_IN_USE`): attached to any post, in any status, or set as the workspace logo. This is safer than detaching silently, which would change content that may be awaiting approval. The record is deleted first, then the file (a failed file delete is logged; the file is unreachable without its record).
+- **Race:** a post saved between the "in use" check and the delete keeps a reference to a missing item. Read paths skip it and the platform check reports "An attached media item no longer exists", so it cannot be submitted until removed.
+- Deleting or duplicating a post never deletes or copies files: a duplicate references the same media items.
+- Owners may delete any item; staff only items they uploaded. Any member may upload and edit alt text and description.
+
+### Posts
+
+Endpoints (`/api/workspaces/:workspaceId/posts`, session required, every route through `requireAccess`):
+
+| Method & path             | Who                                                 | Result                                                                                                           |
+| ------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `GET /`                   | member                                              | Newest first; `status`, `platform`, `q` (title and caption), `before` (cursor), `limit` (max 50)                 |
+| `POST /`                  | member                                              | 201 draft. Also AI Studio's "Save as draft" (`generationId`)                                                     |
+| `GET /:postId`            | member                                              | The post with its media, accounts, review history and readiness                                                  |
+| `PATCH /:postId`          | member, while draft or changes requested            | `{ revision, …changes }`: partial update of the version loaded at `revision`; 409 `CONFLICT` if it changed since |
+| `DELETE /:postId`         | owner: any post; staff: own draft/changes requested | 204                                                                                                              |
+| `POST /:postId/duplicate` | member                                              | 201 new draft ("… (copy)"), no approval history, same media references                                           |
+| `POST /:postId/workflow`  | see below                                           | `{ action, revision, note? }`; 409 `CONFLICT` when `revision` is not the current one                             |
+
+Request bodies are strict: status, author, workspace, review events and schedule are set by the server only. Media must exist in the same workspace; each account must exist in the same workspace and be on a selected platform (400 with the field path). A reference the post already had is kept if its target disappears later, so a disconnected account never blocks saving other changes.
+
+**Workflow** (enforced in `services/post.service.ts`; see [Concurrency](#concurrency-post-revisions) for how simultaneous changes are handled):
+
+| Action            | From → to                                    | Who                       | Notes                                                        |
+| ----------------- | -------------------------------------------- | ------------------------- | ------------------------------------------------------------ |
+| `submit`          | draft, changes requested → awaiting approval | any member                | Readiness must pass (422 `POST_NOT_READY` with details)      |
+| `withdraw`        | awaiting approval → draft                    | the submitter or an owner |                                                              |
+| `approve`         | awaiting approval → approved                 | owner                     | Readiness re-checked (an account may have been disconnected) |
+| `request_changes` | awaiting approval → changes requested        | owner                     | Optional note (max 500)                                      |
+| `reopen`          | approved → draft                             | any member                | Clears the approval; it must be approved again               |
+
+Content can only change in draft or changes requested (409 `INVALID_TRANSITION` otherwise). Every action is appended to `reviewEvents` with the actor, time and note. **Self-approval:** staff can never approve. An owner may approve a post they submitted themselves, because a workspace can have a single owner and would otherwise be stuck; the history shows it. Real separation of duties needs a second approver role, which comes with team management (milestone 8).
+
+#### Concurrency: post revisions
+
+Every post has a `revision` number (returned in every post response) that increases by one with each successful content edit and each workflow step. Every edit and workflow step is one conditional MongoDB update whose filter holds the post ID, the workspace ID, the expected status and the expected revision, and which applies `$inc: { revision: 1 }`. If any of them no longer matches, nothing changes and the API answers 409:
+
+- **Workflow requests carry the revision the user is looking at** (`{ action, revision }`). A different current revision answers `CONFLICT` before anything else is checked, so a decision is never applied to content the user has not seen (for example, an approval after the post was withdrawn, edited and resubmitted). The server checks permissions, the submitter (for `withdraw`) and readiness on that same revision, and the write requires it again, so a change that lands in between makes the write match nothing (`CONFLICT`). The server never retries a stale decision against newer content.
+- **Edits carry the revision the editor loaded** (`{ revision, …changes }`). A different current revision answers `CONFLICT` and nothing changes, so a stale form never overwrites someone else's newer save; the editor offers **Load the latest version** (which replaces unsaved changes) and the user saves again on top of it. The merged content is validated against that revision, and the write requires the same revision and an editable status. If a submit landed in between, the answer is `INVALID_TRANSITION` ("awaiting approval. Withdraw it before editing"); if another edit landed in between, it is `CONFLICT`. Edits are never merged or retried; after a failed write, the server re-reads the post only to choose the message.
+- **Withdraw and resubmit:** the submitter that `withdraw` checks comes from the read revision, and every submit increments the revision. So "submitted by user A" and "the revision being changed" are verified together, and a withdrawal based on an older submission cannot affect a newer one.
+- Deleting is not revision-checked: owners may delete any post, and staff deletions require an editable status in the same update.
+- **Existing posts:** posts saved before revisions existed have no `revision` field. They read as revision 0; the filter for revision 0 also matches a missing field (`{ $in: [0, null] }`); and `$inc` creates the field as 1 on their first change. **No migration is needed.** An optional backfill (`updateMany({ revision: { $exists: false } }, { $set: { revision: 0 } })`) is harmless but not required. `updatedAt` is not used for concurrency.
+- **Not covered:** there is no field-level merge: after a conflict, the second editor reloads (losing unsaved changes on screen) and applies them again. Creating a post needs no revision (new posts start at 0).
+
+**Readiness** (`shared/src/api/post-readiness.ts`, used by the server and live in the editor): at least one platform; a caption or media; per platform a selected, connected account; caption length (Instagram 2,200, Facebook 5,000 in this app); Instagram at most 30 hashtags including those in the caption, at least one item, JPEG photos only, at most 8 MB per photo, MP4 video; Facebook JPEG/PNG/GIF photos, MP4 video, one video or photos only; at most 10 items. These follow Meta's documentation as understood today and **have not been verified with a real publish**; the publishing milestone adds the live checks Meta performs (aspect ratios, video codecs and durations).
+
+### Workspace logo
+
+`PUT /api/workspaces/:workspaceId/logo` `{ mediaId | null }`, owner only. The item must be an image in the same workspace's library. The workspace stores `logoMediaId`; the web app loads it from the media file endpoint. Removing the logo keeps the image; deleting the image is refused while it is the logo. There is no separate logo upload.
+
+**Images and cookies:** the web app loads media with `<img>`/`<video>` from the API, which sends the session cookie only when the web app and API are on the same site (local development, or `app.` and `api.` of one domain). On the default `vercel.app` → `onrender.com` setup the previews fail and a placeholder is shown; see [Cross-site cookies](#cross-site-cookies-and-custom-domains).
 
 ## Cross-site cookies and custom domains
 
